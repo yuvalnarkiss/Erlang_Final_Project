@@ -88,7 +88,7 @@ idle({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]}.	%another sensor tried to send data to this sensor while in sleep mode - data not received
 
 sleep({call,From}, randomize_P, #{position := Sensor_Pos, compared_P := P_comp, data_list := Data_List} = Data) ->
-	P = rand:uniform(),
+	P = rand:uniform(10)/10,  % uniformly randomized floating number between 0.0 - 1.0
 	%io:format("Sensor: randomized p = ~p ~n", [P]), %ToDo:Temp comment
 	{Next_State, New_Data_List} = case P > P_comp of
 		true ->
