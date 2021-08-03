@@ -29,7 +29,7 @@ start_link() ->
 % ============ Functions ===========
 
 init([]) ->
-  TotalData = ets:new(totalData,[set,{heir,PID,Data}]),
+  %TotalData = ets:new(totalData,[set,{heir,PID,Data}]),
   global:register_name(main_PC,self()),
   WXServerPid = graphic:start(),
   {ok, #state{nodes =[],wxPid=WXServerPid}}.
