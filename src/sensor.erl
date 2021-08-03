@@ -82,7 +82,7 @@ format_status(_Opt, [_PDict, _StateName, _State]) ->
 idle(cast,{update_neighbors,NhbrList}, #{name := Name, position := Sensor_Pos} = Data) ->
 	%start battery fsm with 100%
 	spawn_link(battery,batteryMode,[100,sleep,Name]),
-	main_PC:update_sensor({Sensor_Pos,asleep}),
+	graphic:update_sensor({Sensor_Pos,asleep}),
 	{next_state,sleep,Data#{neighbors := NhbrList}};
 idle({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]}.	%another sensor tried to send data to this sensor while in sleep mode - data not received
@@ -93,7 +93,7 @@ sleep({call,From}, randomize_P, #{position := Sensor_Pos, compared_P := P_comp, 
 	{Next_State, New_Data_List} = case P > P_comp of
 		true ->
 			Data_map = maps:new(),
-			main_PC:update_sensor({Sensor_Pos,active}),
+			graphic:update_sensor({Sensor_Pos,active}),
 			%%ToDo: monitor data and save in map,
 			{awake, Data_List ++ [Data_map]};
 		false ->
@@ -110,14 +110,14 @@ awake({call,From}, gotoSleep, #{position := Sensor_Pos, neighbors := NhbrList, d
 	io:format("Sensor ~p: sending data to neighbors ~p ~n", [self(),NhbrList]), %ToDo:Temp comment
 	New_Data_List = send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List),
 	%io:format("Sensor: new data list ~p ~n", [New_Data_List]), %ToDo:Temp comment
-	main_PC:update_sensor({Sensor_Pos,asleep}),
+	graphic:update_sensor({Sensor_Pos,asleep}),
 	{next_state,sleep,Data#{data_list := New_Data_List},[{reply,From,ok}]};
 awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #{data_list := Data_List} = Data) ->
 	io:format("Sensor ~p: got data from ~p ~n", [self(),From]), %ToDo:Temp comment
-	main_PC:update_sensor({From_SensorInPos,sending}),
+	graphic:update_sensor({From_SensorInPos,sending}),
 	timer:sleep(1000),
 	New_Data_List = Data_List ++ Rec_Data_List,
-	main_PC:update_sensor({From_SensorInPos,active}),
+	graphic:update_sensor({From_SensorInPos,active}),
 	timer:sleep(600),
 	io:format("Sensor ~p: updated data list =~p ~n", [self(),New_Data_List]), %ToDo:Temp comment
 	{keep_state,Data#{data_list := New_Data_List},[{reply,From,sent}]}.
@@ -139,7 +139,7 @@ NextStateName = the_next_state_name,
 %% Reason. The return value is ignored.
 terminate(_Reason, _StateName, #{position := Sensor_Pos}) ->
 	io:format("Sensor ~p: shutting down ~n", [self()]), %ToDo:Temp comment
-	main_PC:update_sensor({Sensor_Pos,inactive}),
+	graphic:update_sensor({Sensor_Pos,inactive}),
 ok.
 
 %% @private
