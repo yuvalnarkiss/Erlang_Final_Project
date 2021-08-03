@@ -43,9 +43,7 @@ start_link() ->
   {stop, Reason :: term()} | ignore).
 init([]) ->
   Num_of_sensors = random:uniform(571) + 5, % number of sensors randomized between 6 - 576
-  [Comp_Pos | Pos_list] = randomize_positions(Num_of_sensors,0,0), %ToDo: offsets are temp
-  Fixed_Comp_PID = fixed_comp_pid, %ToDo: add function that creates a fixed computer and returns pid
-  Radius = find_radius([Comp_Pos | Pos_list]),
+  Pos_list = randomize_positions(Num_of_sensors,0,0), %ToDo: offsets are temp
   Sensor_PID_Pos_list = create_sensors(Pos_list),
   %ToDo: call a function that sends <Sensor_PID_list> to the main_PC and waits for full tree.
   % The next psudo function represents what needs to be implemented in main_pc
@@ -124,11 +122,3 @@ create_sensors([]) -> [];
   {ok, Sensor_PID} = sensor:start(Position),
   [{Sensor_PID, Position} | create_sensors(Pos_list)].
 
-find_radius([{_X,_Y}]) -> 0;
-find_radius([{X1,Y1}| Pos_list]) ->
-  Dist = [ dist({X1,Y1},{X2,Y2}) || {X2, Y2} <- Pos_list],
-  Min_dist = lists:min(Dist),
-  Min_Radius = lists:max([ Min_dist | find_radius(Pos_list) ]),
-  Min_Radius.
-
-dist({X1,Y1},{X2,Y2}) -> trunc(math:ceil(math:sqrt(math:pow(X2 - X1, 2) + math:pow(Y2 - Y1, 2)))).
