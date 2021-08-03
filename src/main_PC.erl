@@ -15,16 +15,24 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+%%%===================================================================
+%%% gen_server callbacks
+%%%===================================================================
+
+transfer_data(Data) ->
+  gen_server:cast(main_PC,Data).
+
 %% @doc Spawns the server and registers the local name (unique)
 start_link() ->
   gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
 % ============ Functions ===========
 
 init([]) ->
+  TotalData = ets:new(totalData,[set,{heir,PID,Data}]),
   global:register_name(main_PC,self()),
-  WXServerPid = wx_server:start(),
+  WXServerPid = graphic:start(),
   {ok, #state{nodes =[],wxPid=WXServerPid}}.
-
 
 
 handle_cast(example,State) ->
