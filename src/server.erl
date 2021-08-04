@@ -32,7 +32,7 @@
 start_link(MainPC_ID) ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, MainPC_ID, []).
 
-updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {Name,Position,State,Neighbors,Battery_level,Data_list}
+updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {State,Neighbors,P_comp,Battery_level,Data_list}
   gen_server:cast(?SERVER, {update_ets,Sensor_Pos,Sensor_Data}).
 
 %%%===================================================================
