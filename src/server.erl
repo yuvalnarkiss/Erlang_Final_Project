@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,updateETS/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -32,6 +32,9 @@
 start_link() ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {Name,Position,State,Neighbors,Battery_level,Data_list}
+  gen_server:cast(?SERVER, {update_ets,Sensor_Pos,Sensor_Data}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -42,6 +45,7 @@ start_link() ->
   {ok, State :: #server_state{}} | {ok, State :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
 init([]) ->
+  ets:new(data_base,[set,public,named_table]),
   Num_of_sensors = random:uniform(571) + 5, % number of sensors randomized between 6 - 576
   Pos_list = randomize_positions(Num_of_sensors,0,0), %ToDo: offsets are temp
   Sensor_PID_Pos_list = create_sensors(Pos_list),
@@ -71,6 +75,9 @@ handle_call(_Request, _From, State = #server_state{}) ->
   {noreply, NewState :: #server_state{}} |
   {noreply, NewState :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #server_state{}}).
+handle_cast({update_ets,Sensor_Pos,Sensor_Data}, State = #server_state{}) ->
+  ets:insert(data_base, {Sensor_Pos,Sensor_Data}),
+  {noreply, State};
 handle_cast(_Request, State = #server_state{}) ->
   {noreply, State}.
 
@@ -111,7 +118,7 @@ randomize_positions(Num_of_sensors,OffsetX,OffsetY) ->
 randomize_positions(Pos_List,0,_OffsetX,_OffsetY) ->
   % get rid of duplicates
   Pos_Set = sets:from_list(Pos_List),
-  sets:to_list(Pos_Set).
+  sets:to_list(Pos_Set);
 randomize_positions(Pos_List,Num_of_sensors,OffsetX,OffsetY) ->
   X = 20 * (random:uniform(24) - 1) + OffsetX,
   Y = 20 * (random:uniform(24) - 1) + OffsetX,

@@ -12,7 +12,7 @@
 -behaviour(gen_statem).
 
 %% API
--export([start/2]).
+-export([start/1]).
 
 %% gen_statem callbacks
 -export([init/1, format_status/2, gotoSleep/1, set_battery/2, randomize_P/1, power_off/1, update_neighbors/2, idle/3, sleep/3, awake/3, handle_event/4, terminate/3,
@@ -31,8 +31,8 @@
 %% @doc Creates a gen_statem process which calls Module:init/1 to
 %% initialize. To ensure a synchronized start-up procedure, this
 %% function does not return until Module:init/1 has returned.
-start(Server,Sensor_Pos) ->
-	gen_statem:start(?MODULE, {Server,Sensor_Pos}, []).
+start(Sensor_Pos) ->
+	gen_statem:start(?MODULE, Sensor_Pos, []).
 	%ets:insert(db,{Sensor_Pos, Sensor_PID}).
 
 %%%===================================================================
@@ -56,8 +56,7 @@ power_off(Sensor_Name) ->
 %% @doc Whenever a gen_statem is started using gen_statem:start/[3,4] or
 %% gen_statem:start_link/[3,4], this function is called by the new
 %% process to initialize.
-init({Server,Sensor_Pos}) ->
-	put(server, Server),
+init(Sensor_Pos) ->
 	P_comp = rand:uniform(4) + 94,
   Data = #{name => self(), position => Sensor_Pos, compared_P => P_comp, neighbors => [], battery_level => 100, data_list => []},
 	io:format("Sensor ~p initiated~n", [self()]), %ToDo:Temp comment
@@ -98,22 +97,17 @@ sleep({call,From}, randomize_P, #{position := Sensor_Pos, compared_P := P_comp, 
 			Data_map = maps:new(),
 			graphic:update_sensor({Sensor_Pos,active}),
 			%%ToDo: monitor data and save in map,
+			server:updateETS(Data#'Sensor'.position,{Data#'Sensor'.name,awake,Data#'Sensor'.neighbors,Data#'Sensor'.battery_level,Data_List ++ [Data_map]}),
 			{awake, Data#{data_list := Data_List ++ [Data_map]}};
 		false ->
 			{sleep, Data}
-	end,
-	case Next_State == awake of
-		true ->
-			server:updateETS(awake,New_Data#'Sensor'.name,New_Data#'Sensor'.position,New_Data#'Sensor'.neighbors,New_Data#'Sensor'.battery_level,New_Data#'Sensor'.data_list);
-		false ->
-			ok
 	end,
 	%io:format("Sensor: next state = ~p, data list = ~p~n", [Next_State,New_Data_List]), %ToDo:Temp comment
 	{next_state,Next_State,New_Data,[{reply,From,Next_State}]};
 sleep({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]};	%another sensor tried to send data to this sensor while in sleep mode - data not received
 sleep(cast, {set_battery,New_level}, Data) ->
-	server:updateETS(sleep,Data#'Sensor'.name,Data#'Sensor'.position,Data#'Sensor'.neighbors,New_level,Data#'Sensor'.data_list),
+	server:updateETS(Data#'Sensor'.position,{Data#'Sensor'.name,sleep,Data#'Sensor'.neighbors,New_level,Data#'Sensor'.data_list}),
 	{keep_state,Data#{battery_level := New_level}}.
 
 
@@ -124,7 +118,7 @@ awake({call,From}, gotoSleep, #{position := Sensor_Pos, neighbors := NhbrList, d
 						[] -> sent;
 						_ -> not_sent
 					end,
-	server:updateETS(sleep,Data#'Sensor'.name,Data#'Sensor'.position,Data#'Sensor'.neighbors,Data#'Sensor'.battery_level,New_Data_List),
+	server:updateETS(Data#'Sensor'.position,{Data#'Sensor'.name,sleep,Data#'Sensor'.neighbors,Data#'Sensor'.battery_level,New_Data_List}),
 	graphic:update_sensor({Sensor_Pos,asleep}),
 	{next_state,sleep,Data#{data_list := New_Data_List},[{reply,From,Reply}]};
 awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #{data_list := Data_List} = Data) ->
@@ -137,7 +131,7 @@ awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #{data_list := Da
 	io:format("Sensor ~p: updated data list =~p ~n", [self(),New_Data_List]), %ToDo:Temp comment
 	{keep_state,Data#{data_list := New_Data_List},[{reply,From,sent}]};
 awake(cast, {set_battery,New_level}, Data) ->
-	server:updateETS(awake,Data#'Sensor'.name,Data#'Sensor'.position,Data#'Sensor'.neighbors,New_level,Data#'Sensor'.data_list),
+	server:updateETS(Data#'Sensor'.position,{Data#'Sensor'.name,awake,Data#'Sensor'.neighbors,New_level,Data#'Sensor'.data_list}),
 	{keep_state,Data#{battery_level := New_level}}.
 
 
