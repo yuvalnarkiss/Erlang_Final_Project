@@ -9,11 +9,15 @@
 -module(battery).
 -author("ubuntu").
 
--export([start_battery/1]).
+-export([start_battery/1,start_battery/3]).
 
 start_battery(Name) ->
 	put(baterry_lvl,100),
 	batteryMode(100.0,sleep,Name).
+
+start_battery(Name,State,Battery_level) ->
+	put(baterry_lvl,Battery_level),
+	batteryMode(Battery_level/1,State,Name).
 
 batteryMode(Battery_lvl,_,Sensor_ID) when Battery_lvl =< 0 ->
 	%Battery: Battery level 0% Power Off
