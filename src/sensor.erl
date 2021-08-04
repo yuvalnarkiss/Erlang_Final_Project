@@ -99,9 +99,8 @@ sleep({call,From}, randomize_P, #{position := Sensor_Pos, compared_P := P_comp, 
 	P = rand:uniform(100),  % uniformly randomized floating number between 1 - 100
 	{Next_State, New_Data} = case P > P_comp of
 		true ->
-			Data_map = maps:new(),
 			graphic:update_sensor({Sensor_Pos,active}),
-			%%ToDo: monitor data and save in map,
+			Data_map = monitor_data(Sensor_Pos),
 			server:updateETS(Data#'Sensor'.position,{awake,Data#'Sensor'.neighbors,Data#'Sensor'.compared_P,Data#'Sensor'.battery_level,Data_List ++ [Data_map]}),
 			{awake, Data#{data_list := Data_List ++ [Data_map]}};
 		false ->
@@ -174,3 +173,12 @@ send_data_to_neighbor(Sensor_Pos,[Neighbor_PID|NhbrList],Data_List) ->
 		abort -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List)
 	end,
 	New_Data_List.
+
+monitor_data(Sensor_Pos) ->
+	Map = maps:new(),
+	maps:put(position, Sensor_Pos, Map),
+	maps:put(time, erlang:universaltime(), Map),
+	maps:put(temp, rand:uniform(31) + 9, Map),
+	maps:put(self_temp, maps:get(temp, Map) + rand:uniform(50), Map),
+	maps:put(humidity, rand:uniform(100), Map),
+	Map.
