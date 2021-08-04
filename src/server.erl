@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0,updateETS/2]).
+-export([start_link/1,updateETS/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -29,8 +29,8 @@
 %% @doc Spawns the server and registers the local name (unique)
 -spec(start_link() ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link() ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start_link(MainPC_ID) ->
+  gen_server:start_link({local, ?SERVER}, ?MODULE, MainPC_ID, []).
 
 updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {Name,Position,State,Neighbors,Battery_level,Data_list}
   gen_server:cast(?SERVER, {update_ets,Sensor_Pos,Sensor_Data}).
@@ -44,8 +44,9 @@ updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {Name,Position,State,Nei
 -spec(init(Args :: term()) ->
   {ok, State :: #server_state{}} | {ok, State :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
-init([]) ->
-  ets:new(data_base,[set,public,named_table]),
+init(MainPC_ID) ->
+  register(main_PC,MainPC_ID),
+  ets:new(data_base,[set,public,named_table,{heir, MainPC_ID, heirData}]),
   Num_of_sensors = random:uniform(571) + 5, % number of sensors randomized between 6 - 576
   Pos_list = randomize_positions(Num_of_sensors,0,0), %ToDo: offsets are temp
   Sensor_PID_Pos_list = create_sensors(Pos_list),
