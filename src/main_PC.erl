@@ -1,17 +1,13 @@
 -module('main_PC').
--behaviour(gen_object).
+-behaviour(gen_server).
 %-include("params.hrl").
 
 
 % ============ Exports ===========
--export([init/1]).
--export([start_link/0]).
--export([handle_call/3]).
--export([handle_cast/2]).
--export([handle_info/2]).
+-export([init/1,start_link/0,handle_call/3,handle_cast/2,handle_info/2,terminate/2,transfer_data/1,getETSdata/1,shutdown/0]).
 
 -record(state,{nodes,wxPid}).
--record('Sensor', {}).
+%-record('Sensor', {}).
 
 %%%===================================================================
 %%% API
@@ -21,8 +17,13 @@
 %%% gen_server callbacks
 %%%===================================================================
 
+
+
 transfer_data(Data) ->
   gen_server:cast(main_PC,{transfer_data,Data}).
+
+shutdown()->
+  gen_server:stop().
 
 %% @doc Spawns the server and registers the local name (unique)
 start_link() ->
@@ -31,6 +32,7 @@ start_link() ->
 
 init([]) ->
   %ets:new(totalData,[set]), *** Consider using ets for all the data together, because it will a duplication of an already existing data in the ets of quarters
+  %ToDo: decide if the ets is set or bag - duplication of data for each sensor(PID) will allow us to to a period statistics, but it is optional. right now it's a set, and each time we will calculate the average it will be for the most UpToDate data.
   ets:new(ulQuarter,[set]),
   ets:new(urQuarter,[set]),
   ets:new(dlQuarter,[set]),
@@ -38,20 +40,28 @@ init([]) ->
   global:register_name(main_PC,self()),
   net_kernel:monitor_nodes(true),
   WXServerPid = graphic:start(),
+  FullSensorList = receiveSensorList([],0),
+  Graph = digraph:new([acyclic]),
+  Pos_List = [POS|| {_PID,POS} <- FullSensorList],
+  Radius = find_radius(Pos_List),
+  [digraph:add_vertex(Graph,PID,{PID,POS}) || {PID,POS} <- FullSensorList],
+  [[checkDist(Graph,{PID,POS},{PID1,POS1},Radius) || {PID1,POS1} <- FullSensorList] || {PID,POS} <- FullSensorList],
+
+
   {ok, #state{nodes =[],wxPid=WXServerPid}}.
 
 
 handle_cast({transfer_data,ListOfDatas},State) ->
-  [update_sensor_data(Sensor_Pos,Data_List)|| #{position := Sensor_Pos, data_list := Data_List} <-ListOfDatas],
+  [update_sensor_data(Map)||  Map <-ListOfDatas],
   {noreply,State}.
 
 
 
-handle_call(example, From, State) ->
+handle_call(example, _From, State) ->
   {reply,ok, State}.
 
 
-handle_info({nodedown, Node}, State) ->
+handle_info({nodedown, _Node}, State) ->
   io:fwrite("node down!~n"),
   %NumOfServers = get(numOfServers),
   %put(numOfServers,NumOfServers-1),
@@ -68,6 +78,10 @@ handle_info({nodedown, Node}, State) ->
 handle_info(_Info, State) ->
   {noreply, State}.
 
+terminate(_Reason, _State) ->
+  ets:delete(ulQuarter),ets:delete(urQuarter),ets:delete(dlQuarter),ets:delete(drQuarter),
+  ok.
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
@@ -83,34 +97,55 @@ dist({X1,Y1},{X2,Y2}) -> trunc(math:ceil(math:sqrt(math:pow(X2 - X1, 2) + math:p
 
 find_quarter(Sensor_Pos) ->
   case Sensor_Pos of
-    {X,Y} when X < 490 and Y < 490 -> ulQuarter;
-    {X,Y} when X > 489 and Y < 490 -> urQuarter;
-    {X,Y} when X < 490 and Y > 489 -> dlQuarter;
-    {X,Y} when X > 489 and Y > 489 -> drQuarter
+    {X,Y} when X < 490 , Y < 490 -> ulQuarter;
+    {X,Y} when X > 489 , Y < 490 -> urQuarter;
+    {X,Y} when X < 490 , Y > 489 -> dlQuarter;
+    {X,Y} when X > 489 , Y > 489 -> drQuarter
   end.
 
-update_sensor_data(Sensor_Pos,Data_List) ->
+update_sensor_data(Map) ->
+  Sensor_Pos = maps:get(position,Map),
   case find_quarter(Sensor_Pos) of
-    ulQuarter -> ets:insert(ulQuarter,{Sensor_Pos,Data_List});
-    urQuarter -> ets:insert(urQuarter,{Sensor_Pos,Data_List});
-    dlQuarter -> ets:insert(dlQuarter,{Sensor_Pos,Data_List});
-    drQuarter -> ets:insert(drQuarter,{Sensor_Pos,Data_List})
+    ulQuarter -> ets:insert(ulQuarter,{Sensor_Pos,maps:remove(position,Map)});
+    urQuarter -> ets:insert(urQuarter,{Sensor_Pos,maps:remove(position,Map)});
+    dlQuarter -> ets:insert(dlQuarter,{Sensor_Pos,maps:remove(position,Map)});
+    drQuarter -> ets:insert(drQuarter,{Sensor_Pos,maps:remove(position,Map)})
   end.
 
 quarter_statistics(Quarter) ->
   case Quarter of
-    %ToDo: This is a structure of averaging all monitored data. data1,data2 etc.. needs to be replaced with to actual data name that we would monitor.
     %Every case(every case is a quarter) returns a tuple which consists of the average of each data type.
-    ulQuarter -> AllDataList =  [{Data1,Data2,Data3}|| #{ data1 := Data1,data2 := Data2,data3 := Data3} <- ets:match(ulQuarter,{'_','$1'})],
-      Data1List = [D1 || {D1,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_} <-AllDataList],  Data3List = [D3 || {_,_,D3} <-AllDataList],
-      {lists:sum(Data1List)/length(Data1List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)};
-    urQuarter -> AllDataList =  [{Data1,Data2,Data3}|| #{ data1 := Data1,data2 := Data2,data3 := Data3} <- ets:match(urQuarter,{'_','$1'})],
-      Data1List = [D1 || {D1,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_} <-AllDataList],  Data3List = [D3 || {_,_,D3} <-AllDataList],
-      {lists:sum(Data1List)/length(Data1List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)};
-    dlQuarter -> AllDataList =  [{Data1,Data2,Data3}|| #{ data1 := Data1,data2 := Data2,data3 := Data3} <- ets:match(dlQuarter,{'_','$1'})],
-      Data1List = [D1 || {D1,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_} <-AllDataList],  Data3List = [D3 || {_,_,D3} <-AllDataList],
-      {lists:sum(Data1List)/length(Data1List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)};
-    drQuarter -> AllDataList =  [{Data1,Data2,Data3}|| #{ data1 := Data1,data2 := Data2,data3 := Data3} <- ets:match(drQuarter,{'_','$1'})],
-      Data1List = [D1 || {D1,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_} <-AllDataList],  Data3List = [D3 || {_,_,D3} <-AllDataList],
-      {lists:sum(Data1List)/length(Data1List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)}
+    ulQuarter -> AllDataList =  [{Data1,Data2,Data3,Data4}|| #{ time := Data4,temp := Data2,self_temp := Data3,humidity := Data1} <- ets:match(ulQuarter,{'_','$1'})],
+      Data4List = [D1 || {D1,_,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_,_} <-AllDataList],  Data3List = [D3 || {_,_,D3,_} <-AllDataList],
+      {lists:sum(Data4List)/length(Data4List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)};
+    urQuarter -> AllDataList =  [{Data1,Data2,Data3,Data4}|| #{ time := Data4,temp := Data2,self_temp := Data3,humidity := Data1} <- ets:match(urQuarter,{'_','$1'})],
+      Data4List = [D1 || {D1,_,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_,_} <-AllDataList],  Data3List = [D3 || {_,_,D3,_} <-AllDataList],
+      {lists:sum(Data4List)/length(Data4List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)};
+    dlQuarter -> AllDataList =  [{Data1,Data2,Data3,Data4}|| #{ time := Data4,temp := Data2,self_temp := Data3,humidity := Data1} <- ets:match(dlQuarter,{'_','$1'})],
+      Data4List = [D1 || {D1,_,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_,_} <-AllDataList],  Data3List = [D3 || {_,_,D3,_} <-AllDataList],
+      {lists:sum(Data4List)/length(Data4List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)};
+    drQuarter -> AllDataList =  [{Data1,Data2,Data3,Data4}|| #{ time := Data4,temp := Data2,self_temp := Data3,humidity := Data1} <- ets:match(drQuarter,{'_','$1'})],
+      Data4List = [D1 || {D1,_,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_,_} <-AllDataList],  Data3List = [D3 || {_,_,D3,_} <-AllDataList],
+      {lists:sum(Data4List)/length(Data4List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)}
+  end.
+
+getETSdata(ETS) ->
+  case ETS of
+    ulQuarter -> ets:match_object(ulQuarter, {'$0', '$1'});
+    urQuarter -> ets:match_object(urQuarter, {'$0', '$1'});
+    dlQuarter -> ets:match_object(dlQuarter, {'$0', '$1'});
+    drQuarter -> ets:match_object(drQuarter, {'$0', '$1'})
+  end.
+
+
+receiveSensorList(AggregatedSensorList,4) -> AggregatedSensorList ++ {spawn(stationary_comp,start_loop,[]),{989,0}};
+receiveSensorList(AggregatedSensorList,N) ->
+  receive
+    ReceivedSensorList ->  receiveSensorList(AggregatedSensorList ++ ReceivedSensorList,N+1)
+  end.
+
+checkDist(G,{PID,POS},{PID1,POS1},Radius) ->
+  case dist(POS,POS1) < Radius of
+    true -> digraph:add_edge(G,PID,PID1);
+    false -> false
   end.
