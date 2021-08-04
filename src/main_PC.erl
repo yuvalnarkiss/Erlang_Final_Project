@@ -25,6 +25,7 @@ transfer_data(Data) ->
 shutdown()->
   gen_server:stop().
 
+
 %% @doc Spawns the server and registers the local name (unique)
 start_link() ->
   gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
