@@ -104,7 +104,7 @@ sleep({call,From}, randomize_P, #{position := Sensor_Pos, compared_P := P_comp, 
 	end,
 	case Next_State == awake of
 		true ->
-			server:updateETS(awake,New_Data);
+			server:updateETS(awake,New_Data#'Sensor'.name,New_Data#'Sensor'.position,New_Data#'Sensor'.neighbors,New_Data#'Sensor'.battery_level,New_Data#'Sensor'.data_list);
 		false ->
 			ok
 	end,
@@ -113,7 +113,7 @@ sleep({call,From}, randomize_P, #{position := Sensor_Pos, compared_P := P_comp, 
 sleep({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]};	%another sensor tried to send data to this sensor while in sleep mode - data not received
 sleep(cast, {set_battery,New_level}, Data) ->
-	server:updateETS(sleep,Data),
+	server:updateETS(sleep,Data#'Sensor'.name,Data#'Sensor'.position,Data#'Sensor'.neighbors,New_level,Data#'Sensor'.data_list),
 	{keep_state,Data#{battery_level := New_level}}.
 
 
@@ -124,7 +124,7 @@ awake({call,From}, gotoSleep, #{position := Sensor_Pos, neighbors := NhbrList, d
 						[] -> sent;
 						_ -> not_sent
 					end,
-	server:updateETS(sleep,Data#{data_list := New_Data_List}),
+	server:updateETS(sleep,Data#'Sensor'.name,Data#'Sensor'.position,Data#'Sensor'.neighbors,Data#'Sensor'.battery_level,New_Data_List),
 	graphic:update_sensor({Sensor_Pos,asleep}),
 	{next_state,sleep,Data#{data_list := New_Data_List},[{reply,From,Reply}]};
 awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #{data_list := Data_List} = Data) ->
@@ -137,7 +137,7 @@ awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #{data_list := Da
 	io:format("Sensor ~p: updated data list =~p ~n", [self(),New_Data_List]), %ToDo:Temp comment
 	{keep_state,Data#{data_list := New_Data_List},[{reply,From,sent}]};
 awake(cast, {set_battery,New_level}, Data) ->
-	server:updateETS(awake,Data),
+	server:updateETS(awake,Data#'Sensor'.name,Data#'Sensor'.position,Data#'Sensor'.neighbors,New_level,Data#'Sensor'.data_list),
 	{keep_state,Data#{battery_level := New_level}}.
 
 
