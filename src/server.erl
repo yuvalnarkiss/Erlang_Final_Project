@@ -88,6 +88,10 @@ handle_cast(_Request, State = #server_state{}) ->
   {noreply, NewState :: #server_state{}} |
   {noreply, NewState :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #server_state{}}).
+handle_info({'ETS-TRANSFER', TableId, _OldOwner, _GiftData}, State = #server_state{}) ->
+  ETS_old_list = ets:tab2list(TableId),
+  recreate_sensors(ETS_old_list),
+  {noreply, State};
 handle_info(_Info, State = #server_state{}) ->
   {noreply, State}.
 
@@ -130,3 +134,8 @@ create_sensors([]) -> [];
   {ok, Sensor_PID} = sensor:start(Position),
   [{Sensor_PID, Position} | create_sensors(Pos_list)].
 
+recreate_sensors([]) -> ok;
+recreate_sensors([{Sensor_Pos,Sensor_Data}|Sensors_list]) ->
+  sensor:start(Sensor_Pos,Sensor_Data),
+  ets:insert(data_base,{Sensor_Pos,Sensor_Data}),
+  recreate_sensors(Sensors_list).
