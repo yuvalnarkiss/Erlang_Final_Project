@@ -27,7 +27,7 @@
 %%%===================================================================
 
 %% @doc Spawns the server and registers the local name (unique)
--spec(start_link() ->
+-spec(start_link( MainPC_ID :: pid() ) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link(MainPC_ID) ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, MainPC_ID, []).
@@ -47,7 +47,7 @@ updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {State,Neighbors,P_comp,
 init(MainPC_ID) ->
   register(main_PC,MainPC_ID),
   ets:new(data_base,[set,public,named_table,{heir, MainPC_ID, heirData}]),
-  Num_of_sensors = random:uniform(571) + 5, % number of sensors randomized between 6 - 576
+  Num_of_sensors = rand:uniform(571) + 5, % number of sensors randomized between 6 - 576
   Pos_list = randomize_positions(Num_of_sensors,0,0), %ToDo: offsets are temp
   Sensor_PID_Pos_list = create_sensors(Pos_list),
   %ToDo: call a function that sends <Sensor_PID_list> to the main_PC and waits for full tree.
@@ -125,8 +125,8 @@ randomize_positions(Pos_List,0,_OffsetX,_OffsetY) ->
   Pos_Set = sets:from_list(Pos_List),
   sets:to_list(Pos_Set);
 randomize_positions(Pos_List,Num_of_sensors,OffsetX,OffsetY) ->
-  X = 20 * (random:uniform(24) - 1) + OffsetX,
-  Y = 20 * (random:uniform(24) - 1) + OffsetX,
+  X = 20 * (rand:uniform(24) - 1) + OffsetX,
+  Y = 20 * (rand:uniform(24) - 1) + OffsetX,
   randomize_positions([{X,Y} | Pos_List],Num_of_sensors-1,OffsetX,OffsetY).
 
 create_sensors([]) -> [];
