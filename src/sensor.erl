@@ -57,7 +57,7 @@ power_off(Sensor_Name) ->
 %% gen_statem:start_link/[3,4], this function is called by the new
 %% process to initialize.
 init(Sensor_Pos) ->
-	P_comp = rand:uniform(4) + 94,
+	P_comp = rand:uniform(4) + 94,  % percentage of sleep time randomize between 95%-98%
   Data = #{name => self(), position => Sensor_Pos, compared_P => P_comp, neighbors => [], battery_level => 100, data_list => []},
 	io:format("Sensor ~p initiated~n", [self()]), %ToDo:Temp comment
   {ok, idle, Data}.
@@ -83,7 +83,6 @@ format_status(_Opt, [_PDict, _StateName, _State]) ->
 %% call/2, cast/2, or as a normal process message.
 
 idle(cast,{update_neighbors,NhbrList}, #{name := Name, position := Sensor_Pos} = Data) ->
-	%start battery fsm with 100%
 	spawn_link(battery,start_battery,[Name]),
 	graphic:update_sensor({Sensor_Pos,asleep}),
 	{next_state,sleep,Data#{neighbors := NhbrList}};
@@ -102,7 +101,6 @@ sleep({call,From}, randomize_P, #{position := Sensor_Pos, compared_P := P_comp, 
 		false ->
 			{sleep, Data}
 	end,
-	%io:format("Sensor: next state = ~p, data list = ~p~n", [Next_State,New_Data_List]), %ToDo:Temp comment
 	{next_state,Next_State,New_Data,[{reply,From,Next_State}]};
 sleep({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]};	%another sensor tried to send data to this sensor while in sleep mode - data not received
@@ -112,7 +110,6 @@ sleep(cast, {set_battery,New_level}, Data) ->
 
 
 awake({call,From}, gotoSleep, #{position := Sensor_Pos, neighbors := NhbrList, data_list := Data_List} = Data) ->
-	io:format("Sensor ~p: sending data to neighbors ~p ~n", [self(),NhbrList]), %ToDo:Temp comment
 	New_Data_List = send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List),
 	Reply = case New_Data_List of
 						[] -> sent;
@@ -122,13 +119,11 @@ awake({call,From}, gotoSleep, #{position := Sensor_Pos, neighbors := NhbrList, d
 	graphic:update_sensor({Sensor_Pos,asleep}),
 	{next_state,sleep,Data#{data_list := New_Data_List},[{reply,From,Reply}]};
 awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #{data_list := Data_List} = Data) ->
-	io:format("Sensor ~p: got data from ~p ~n", [self(),From]), %ToDo:Temp comment
 	graphic:update_sensor({From_SensorInPos,sending}),
-	timer:sleep(900),
+	timer:sleep(900),	%for graphic purposes
 	New_Data_List = Data_List ++ Rec_Data_List,
 	graphic:update_sensor({From_SensorInPos,active}),
-	timer:sleep(300),
-	io:format("Sensor ~p: updated data list =~p ~n", [self(),New_Data_List]), %ToDo:Temp comment
+	timer:sleep(300),		%for graphic purposes
 	{keep_state,Data#{data_list := New_Data_List},[{reply,From,sent}]};
 awake(cast, {set_battery,New_level}, Data) ->
 	server:updateETS(Data#'Sensor'.position,{Data#'Sensor'.name,awake,Data#'Sensor'.neighbors,New_level,Data#'Sensor'.data_list}),
@@ -169,7 +164,7 @@ send_data_to_neighbor(Sensor_Pos,[Neighbor_PID|NhbrList],Data_List) ->
 								 false -> abort
 							 end,
 	New_Data_List = case Msg_status of
-		sent -> io:format("Sensor ~p: success! data sent to ~p ~n", [self(),Neighbor_PID]), [];	%ToDo:Temp comment
-		abort -> io:format("Sensor ~p: failed to send data to ~p ~n", [self(),Neighbor_PID]), send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List)	 %ToDo:Temp comment
+		sent -> [];
+		abort -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List)
 	end,
 	New_Data_List.
