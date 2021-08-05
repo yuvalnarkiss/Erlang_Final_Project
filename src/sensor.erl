@@ -62,6 +62,11 @@ init({recover,Sensor_Pos,Sensor_Data}) ->
 	{State,Neighbors,P_comp,Battery_level,Data_list} = Sensor_Data,
 	Data = #sensor{name = self(), position = Sensor_Pos, compared_P = P_comp, neighbors = Neighbors, battery_level = Battery_level, data_list = Data_list},
 	spawn_link(battery,start_battery,[self(),State,Battery_level]),
+	Graphic_State = case State of
+										sleep -> asleep;
+										awake -> active
+									end,
+	graphic:update_sensor({Sensor_Pos,Graphic_State}),
 	{ok, State, Data};
 init(Sensor_Pos) ->
 	P_comp = rand:uniform(4) + 94,  % percentage of sleep time randomize between 95%-98%
