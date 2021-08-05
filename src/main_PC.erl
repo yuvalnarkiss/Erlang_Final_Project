@@ -34,10 +34,10 @@ start_link() ->
 
 init([]) ->
   %ets:new(totalData,[set]), *** Consider using ets for all the data together, because it will a duplication of an already existing data in the ets of quarters
-  ets:new(ulQuarter,[bag]),
-  ets:new(urQuarter,[bag]),
-  ets:new(dlQuarter,[bag]),
-  ets:new(drQuarter,[bag]),
+  ets:new(ulQuarter,[bag,named_table]),
+  ets:new(urQuarter,[bag,named_table]),
+  ets:new(dlQuarter,[bag,named_table]),
+  ets:new(drQuarter,[bag,named_table]),
   global:register_name(main_PC,self()),
   net_kernel:monitor_nodes(true),
   WXServerPid = graphic:start(),
@@ -116,24 +116,37 @@ update_sensor_data(Map) ->
 quarter_current_averages(Quarter,AllPosList) ->
   case Quarter of
     %Every case(every case is a quarter) returns a tuple which consists of the average of each data type.
-    ulQuarter -> AllDataList =  [{Data1,Data2,Data3,Data4}|| #{ time := Data4,temp := Data2,self_temp := Data3,humidity := Data1} <- ets:match(ulQuarter,{'_','$1'})],
-      Data4List = [D1 || {D1,_,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_,_} <-AllDataList],  Data3List = [D3 || {_,_,D3,_} <-AllDataList],
-      {lists:sum(Data4List)/length(Data4List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)};
+    ulQuarter -> TempETS = ets:new(tempETS,[bag]),
+      _LIST = [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(ulQuarter,POS)),TempETS)|| POS <- AllPosList],
+      TempAVG = lists:sum(lists:flatten(ets:match(TempETS,{temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{temp,'$1'}))),
+      SelfTempAVG = lists:sum(lists:flatten(ets:match(TempETS,{self_temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{self_temp,'$1'}))),
+      HumidityAVG = lists:sum(lists:flatten(ets:match(TempETS,{humidity,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{humidity,'$1'}))),
+      ets:delete(TempETS),
+      {TempAVG,SelfTempAVG,HumidityAVG};
 
-    %ulQuarter -> LIST = [|| {} <- AllPosList]
+    urQuarter -> TempETS = ets:new(tempETS,[bag]),
+      [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(urQuarter,POS)),TempETS)|| POS <- AllPosList],
+      TempAVG = lists:sum(lists:flatten(ets:match(TempETS,{temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{temp,'$1'}))),
+      SelfTempAVG = lists:sum(lists:flatten(ets:match(TempETS,{self_temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{self_temp,'$1'}))),
+      HumidityAVG = lists:sum(lists:flatten(ets:match(TempETS,{humidity,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{humidity,'$1'}))),
+      ets:delete(TempETS),
+      {TempAVG,SelfTempAVG,HumidityAVG};
 
+    dlQuarter -> TempETS = ets:new(tempETS,[bag]),
+      [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(dlQuarter,POS)),TempETS)|| POS <- AllPosList],
+      TempAVG = lists:sum(lists:flatten(ets:match(TempETS,{temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{temp,'$1'}))),
+      SelfTempAVG = lists:sum(lists:flatten(ets:match(TempETS,{self_temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{self_temp,'$1'}))),
+      HumidityAVG = lists:sum(lists:flatten(ets:match(TempETS,{humidity,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{humidity,'$1'}))),
+      ets:delete(TempETS),
+      {TempAVG,SelfTempAVG,HumidityAVG};
 
-
-
-    urQuarter -> AllDataList =  [{Data1,Data2,Data3,Data4}|| #{ time := Data4,temp := Data2,self_temp := Data3,humidity := Data1} <- ets:match(urQuarter,{'_','$1'})],
-      Data4List = [D1 || {D1,_,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_,_} <-AllDataList],  Data3List = [D3 || {_,_,D3,_} <-AllDataList],
-      {lists:sum(Data4List)/length(Data4List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)};
-    dlQuarter -> AllDataList =  [{Data1,Data2,Data3,Data4}|| #{ time := Data4,temp := Data2,self_temp := Data3,humidity := Data1} <- ets:match(dlQuarter,{'_','$1'})],
-      Data4List = [D1 || {D1,_,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_,_} <-AllDataList],  Data3List = [D3 || {_,_,D3,_} <-AllDataList],
-      {lists:sum(Data4List)/length(Data4List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)};
-    drQuarter -> AllDataList =  [{Data1,Data2,Data3,Data4}|| #{ time := Data4,temp := Data2,self_temp := Data3,humidity := Data1} <- ets:match(drQuarter,{'_','$1'})],
-      Data4List = [D1 || {D1,_,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_,_} <-AllDataList],  Data3List = [D3 || {_,_,D3,_} <-AllDataList],
-      {lists:sum(Data4List)/length(Data4List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)}
+    drQuarter -> TempETS = ets:new(tempETS,[bag]),
+      [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(drQuarter,POS)),TempETS)|| POS <- AllPosList],
+      TempAVG = lists:sum(lists:flatten(ets:match(TempETS,{temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{temp,'$1'}))),
+      SelfTempAVG = lists:sum(lists:flatten(ets:match(TempETS,{self_temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{self_temp,'$1'}))),
+      HumidityAVG = lists:sum(lists:flatten(ets:match(TempETS,{humidity,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{humidity,'$1'}))),
+      ets:delete(TempETS),
+      {TempAVG,SelfTempAVG,HumidityAVG}
   end.
 
 getETSdata(ETS) ->
@@ -157,10 +170,33 @@ receiveSensorList(AggregatedSensorList,N) ->
 %    false -> false
 %  end.
 checkDist(POS,POS1,Radius) ->
-  case dist(POS,POS1) < Radius of
+  case dist(POS,POS1) =< Radius of
     true -> true;
     false -> false
   end.
 
 sendNeighbourList(Sensor_Name,NhbrList) ->
   sensor:update_neighbors(Sensor_Name,NhbrList).
+
+accumulated_stat_of_sensor(ElemList) ->
+  TempETS = ets:new(tempETS,[set]),
+  [insert_map_to_tempETS(Map,TempETS)||{_POS,Map} <- ElemList],
+  TempAVG = lists:sum(lists:flatten(ets:match(TempETS,{temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{temp,'$1'}))),
+  SelfTempAVG = lists:sum(lists:flatten(ets:match(TempETS,{self_temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{self_temp,'$1'}))),
+  HumidityAVG = lists:sum(lists:flatten(ets:match(TempETS,{humidity,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{humidity,'$1'}))),
+  ets:delete(TempETS),
+  {TempAVG,SelfTempAVG,HumidityAVG}.
+
+
+
+insert_map_to_tempETS(Map,TempETS) ->
+  ets:insert(TempETS,{time,maps:get(time,Map)}),
+  ets:insert(TempETS,{temp,maps:get(temp,Map)}),
+  ets:insert(TempETS,{self_temp,maps:get(self_temp,Map)}),
+  ets:insert(TempETS,{humidity,maps:get(humidity,Map)}).
+
+insert_data_to_tempETS({TimeData,TempData,SelfTempData,HumidityData},TempETS) ->
+  ets:insert(TempETS,{time,TimeData}),
+  ets:insert(TempETS,{temp,TempData}),
+  ets:insert(TempETS,{self_temp,SelfTempData}),
+  ets:insert(TempETS,{humidity,HumidityData}).
