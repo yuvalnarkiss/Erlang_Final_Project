@@ -89,9 +89,10 @@ format_status(_Opt, [_PDict, _StateName, _State]) ->
 %% call/2, cast/2, or as a normal process message.
 
 idle(cast,{update_neighbors,NhbrList}, #sensor{name = Name, position = Sensor_Pos} = Data) ->
+	Sorted_NhbrList = neighbor_sort(Sensor_Pos,NhbrList),
 	spawn_link(battery,start_battery,[Name]),
 	graphic:update_sensor({Sensor_Pos,asleep}),
-	{next_state,sleep,Data#sensor{neighbors = NhbrList}};
+	{next_state,sleep,Data#sensor{neighbors = Sorted_NhbrList}};
 idle({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]}.	%another sensor tried to send data to this sensor while in sleep mode - data not received
 
@@ -180,3 +181,13 @@ monitor_data(Sensor_Pos) ->
 	Self_Temp = Temp + rand:uniform(50),
 	Humidity = rand:uniform(100),
 	#{position => Sensor_Pos, time => Time , temp => Temp, self_temp => Self_Temp, humidity => Humidity}.
+
+neighbor_sort(_Sensor_Pos,[]) -> [];
+neighbor_sort(Sensor_Pos,NhbrList) ->
+	Target = {940,0},
+	Dist_list = [ {dist(Sensor_Pos,Mid_sens_pos) + dist(Target,Mid_sens_pos), Mid_sens_pid} || {Mid_sens_pid,Mid_sens_pos} <- NhbrList ],
+	Sorted_Dist_list = lists:sort(fun({A,_Pid1},{B,_Pid2}) -> A =< B end, Dist_list),
+	Serted_NhbrList = [ Sens_pid || {_Dist, Sens_pid} <- Sorted_Dist_list ],
+	Serted_NhbrList.
+
+dist({X1,Y1},{X2,Y2}) -> trunc(math:ceil(math:sqrt(math:pow(X2 - X1, 2) + math:pow(Y2 - Y1, 2)))).
