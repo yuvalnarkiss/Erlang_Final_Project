@@ -18,11 +18,11 @@
 -export([init/1, format_status/2, gotoSleep/1, set_battery/2, randomize_P/1, power_off/1, update_neighbors/2, idle/3, sleep/3, awake/3, handle_event/4, terminate/3,
   code_change/4, callback_mode/0]).
 
--record('Sensor', {name,position,compared_P,neighbors,battery_level,data_list}).
+-record(sensor, {name,position,compared_P,neighbors,battery_level,data_list}).
 
 -define(SERVER, ?MODULE).
 
-%%-record('Sensor'_state, {}).
+%%-record(sensor_state, {}).
 
 %%%===================================================================
 %%% API
@@ -60,12 +60,12 @@ power_off(Sensor_Name) ->
 %% process to initialize.
 init({recover,Sensor_Pos,Sensor_Data}) ->
 	{State,Neighbors,P_comp,Battery_level,Data_list} = Sensor_Data,
-	Data = #{name => self(), position => Sensor_Pos, compared_P => P_comp, neighbors => Neighbors, battery_level => Battery_level, data_list => Data_list},
+	Data = #sensor{name = self(), position = Sensor_Pos, compared_P = P_comp, neighbors = Neighbors, battery_level = Battery_level, data_list = Data_list},
 	spawn_link(battery,start_battery,[self(),State,Battery_level]),
 	{ok, State, Data};
 init(Sensor_Pos) ->
 	P_comp = rand:uniform(4) + 94,  % percentage of sleep time randomize between 95%-98%
-  Data = #{name => self(), position => Sensor_Pos, compared_P => P_comp, neighbors => [], battery_level => 100, data_list => []},
+  Data = #sensor{name = self(), position = Sensor_Pos, compared_P = P_comp, neighbors = [], battery_level = 100, data_list = []},
   {ok, idle, Data}.
 
 %% @private
@@ -88,21 +88,21 @@ format_status(_Opt, [_PDict, _StateName, _State]) ->
 %% functions is called when gen_statem receives and event from
 %% call/2, cast/2, or as a normal process message.
 
-idle(cast,{update_neighbors,NhbrList}, #{name := Name, position := Sensor_Pos} = Data) ->
+idle(cast,{update_neighbors,NhbrList}, #sensor{name = Name, position = Sensor_Pos} = Data) ->
 	spawn_link(battery,start_battery,[Name]),
 	graphic:update_sensor({Sensor_Pos,asleep}),
-	{next_state,sleep,Data#{neighbors := NhbrList}};
+	{next_state,sleep,Data#sensor{neighbors = NhbrList}};
 idle({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]}.	%another sensor tried to send data to this sensor while in sleep mode - data not received
 
-sleep({call,From}, randomize_P, #{position := Sensor_Pos, compared_P := P_comp, data_list := Data_List} = Data) ->
+sleep({call,From}, randomize_P, #sensor{position = Sensor_Pos, compared_P = P_comp, data_list = Data_List} = Data) ->
 	P = rand:uniform(100),  % uniformly randomized floating number between 1 - 100
 	{Next_State, New_Data} = case P > P_comp of
 		true ->
 			graphic:update_sensor({Sensor_Pos,active}),
 			Data_map = monitor_data(Sensor_Pos),
-			server:updateETS(Data#'Sensor'.position,{awake,Data#'Sensor'.neighbors,Data#'Sensor'.compared_P,Data#'Sensor'.battery_level,Data_List ++ [Data_map]}),
-			{awake, Data#{data_list := Data_List ++ [Data_map]}};
+			server:updateETS(Sensor_Pos,{awake,Data#sensor.neighbors,P_comp,Data#sensor.battery_level,Data_List ++ [Data_map]}),
+			{awake, Data#sensor{data_list = Data_List ++ [Data_map]}};
 		false ->
 			{sleep, Data}
 	end,
@@ -110,29 +110,29 @@ sleep({call,From}, randomize_P, #{position := Sensor_Pos, compared_P := P_comp, 
 sleep({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]};	%another sensor tried to send data to this sensor while in sleep mode - data not received
 sleep(cast, {set_battery,New_level}, Data) ->
-	server:updateETS(Data#'Sensor'.position,{sleep,Data#'Sensor'.neighbors,Data#'Sensor'.compared_P,New_level,Data#'Sensor'.data_list}),
-	{keep_state,Data#{battery_level := New_level}}.
+	server:updateETS(Data#sensor.position,{sleep,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list}),
+	{keep_state,Data#sensor{battery_level = New_level}}.
 
 
-awake({call,From}, gotoSleep, #{position := Sensor_Pos, neighbors := NhbrList, data_list := Data_List} = Data) ->
+awake({call,From}, gotoSleep, #sensor{position = Sensor_Pos, neighbors = NhbrList, data_list = Data_List} = Data) ->
 	New_Data_List = send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List),
 	Reply = case New_Data_List of
 						[] -> sent;
 						_ -> not_sent
 					end,
-	server:updateETS(Data#'Sensor'.position,{sleep,Data#'Sensor'.neighbors,Data#'Sensor'.compared_P,Data#'Sensor'.battery_level,New_Data_List}),
+	server:updateETS(Sensor_Pos,{sleep,NhbrList,Data#sensor.compared_P,Data#sensor.battery_level,New_Data_List}),
 	graphic:update_sensor({Sensor_Pos,asleep}),
-	{next_state,sleep,Data#{data_list := New_Data_List},[{reply,From,Reply}]};
-awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #{data_list := Data_List} = Data) ->
+	{next_state,sleep,Data#sensor{data_list = New_Data_List},[{reply,From,Reply}]};
+awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #sensor{data_list = Data_List} = Data) ->
 	graphic:update_sensor({From_SensorInPos,sending}),
 	timer:sleep(900),	%for graphic purposes
 	New_Data_List = Data_List ++ Rec_Data_List,
 	graphic:update_sensor({From_SensorInPos,active}),
 	timer:sleep(300),		%for graphic purposes
-	{keep_state,Data#{data_list := New_Data_List},[{reply,From,sent}]};
+	{keep_state,Data#sensor{data_list = New_Data_List},[{reply,From,sent}]};
 awake(cast, {set_battery,New_level}, Data) ->
-	server:updateETS(Data#'Sensor'.position,{awake,Data#'Sensor'.neighbors,Data#'Sensor'.compared_P,New_level,Data#'Sensor'.data_list}),
-	{keep_state,Data#{battery_level := New_level}}.
+	server:updateETS(Data#sensor.position,{awake,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list}),
+	{keep_state,Data#sensor{battery_level = New_level}}.
 
 
 
@@ -140,7 +140,7 @@ awake(cast, {set_battery,New_level}, Data) ->
 %% @doc If callback_mode is handle_event_function, then whenever a
 %% gen_statem receives an event from call/2, cast/2, or as a normal
 %% process message, this function is called.
-handle_event(_EventType, _EventContent, _StateName, State = #'Sensor'{}) ->
+handle_event(_EventType, _EventContent, _StateName, State = #sensor{}) ->
 NextStateName = the_next_state_name,
 {next_state, NextStateName, State}.
 
@@ -149,14 +149,14 @@ NextStateName = the_next_state_name,
 %% terminate. It should be the opposite of Module:init/1 and do any
 %% necessary cleaning up. When it returns, the gen_statem terminates with
 %% Reason. The return value is ignored.
-terminate(_Reason, _StateName, #{position := Sensor_Pos}) ->
+terminate(_Reason, _StateName, #sensor{position = Sensor_Pos}) ->
 	io:format("Sensor ~p: shutting down ~n", [self()]), %ToDo:Temp comment
 	graphic:update_sensor({Sensor_Pos,inactive}),
 ok.
 
 %% @private
 %% @doc Convert process state when code is changed
-code_change(_OldVsn, StateName, State = #'Sensor'{}, _Extra) ->
+code_change(_OldVsn, StateName, State = #sensor{}, _Extra) ->
 {ok, StateName, State}.
 
 %%%===================================================================
@@ -175,10 +175,8 @@ send_data_to_neighbor(Sensor_Pos,[Neighbor_PID|NhbrList],Data_List) ->
 	New_Data_List.
 
 monitor_data(Sensor_Pos) ->
-	Map = maps:new(),
-	maps:put(position, Sensor_Pos, Map),
-	maps:put(time, erlang:universaltime(), Map),
-	maps:put(temp, rand:uniform(31) + 9, Map),
-	maps:put(self_temp, maps:get(temp, Map) + rand:uniform(50), Map),
-	maps:put(humidity, rand:uniform(100), Map),
-	Map.
+	Time = erlang:universaltime(),
+	Temp = rand:uniform(31) + 9,
+	Self_Temp = Temp + rand:uniform(50),
+	Humidity = rand:uniform(100),
+	#{position => Sensor_Pos, time => Time , temp => Temp, self_temp => Self_Temp, humidity => Humidity}.
