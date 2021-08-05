@@ -30,24 +30,24 @@ shutdown()->
 start_link() ->
   gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
 % ============ Functions ===========
+%BY POSITION
 
 init([]) ->
   %ets:new(totalData,[set]), *** Consider using ets for all the data together, because it will a duplication of an already existing data in the ets of quarters
-  %ToDo: decide if the ets is set or bag - duplication of data for each sensor(PID) will allow us to to a period statistics, but it is optional. right now it's a set, and each time we will calculate the average it will be for the most UpToDate data.
-  ets:new(ulQuarter,[set]),
-  ets:new(urQuarter,[set]),
-  ets:new(dlQuarter,[set]),
-  ets:new(drQuarter,[set]),
+  ets:new(ulQuarter,[bag]),
+  ets:new(urQuarter,[bag]),
+  ets:new(dlQuarter,[bag]),
+  ets:new(drQuarter,[bag]),
   global:register_name(main_PC,self()),
   net_kernel:monitor_nodes(true),
   WXServerPid = graphic:start(),
   FullSensorList = receiveSensorList([],0),
-  Graph = digraph:new([acyclic]),
+  %Graph = digraph:new(),
   Pos_List = [POS|| {_PID,POS} <- FullSensorList],
   Radius = find_radius(Pos_List),
-  [digraph:add_vertex(Graph,PID,{PID,POS}) || {PID,POS} <- FullSensorList],
-  [[checkDist(Graph,{PID,POS},{PID1,POS1},Radius) || {PID1,POS1} <- FullSensorList] || {PID,POS} <- FullSensorList],
-
+  %[digraph:add_vertex(Graph,PID,{PID,POS}) || {PID,POS} <- FullSensorList],
+  %[[checkDist(Graph,{PID,POS},{PID1,POS1},Radius) || {PID1,POS1} <- FullSensorList] || {PID,POS} <- FullSensorList],
+  [sendNeighbourList(PID,[{PID1,POS1}|| {PID1,POS1} <- FullSensorList,checkDist(POS,POS1,Radius)]) || {PID,POS} <- FullSensorList],
 
   {ok, #state{nodes =[],wxPid=WXServerPid}}.
 
@@ -113,12 +113,18 @@ update_sensor_data(Map) ->
     drQuarter -> ets:insert(drQuarter,{Sensor_Pos,maps:remove(position,Map)})
   end.
 
-quarter_statistics(Quarter) ->
+quarter_current_averages(Quarter,AllPosList) ->
   case Quarter of
     %Every case(every case is a quarter) returns a tuple which consists of the average of each data type.
     ulQuarter -> AllDataList =  [{Data1,Data2,Data3,Data4}|| #{ time := Data4,temp := Data2,self_temp := Data3,humidity := Data1} <- ets:match(ulQuarter,{'_','$1'})],
       Data4List = [D1 || {D1,_,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_,_} <-AllDataList],  Data3List = [D3 || {_,_,D3,_} <-AllDataList],
       {lists:sum(Data4List)/length(Data4List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)};
+
+    %ulQuarter -> LIST = [|| {} <- AllPosList]
+
+
+
+
     urQuarter -> AllDataList =  [{Data1,Data2,Data3,Data4}|| #{ time := Data4,temp := Data2,self_temp := Data3,humidity := Data1} <- ets:match(urQuarter,{'_','$1'})],
       Data4List = [D1 || {D1,_,_,_} <-AllDataList], Data2List = [D2 || {_,D2,_,_} <-AllDataList],  Data3List = [D3 || {_,_,D3,_} <-AllDataList],
       {lists:sum(Data4List)/length(Data4List),lists:sum(Data2List)/length(Data2List),lists:sum(Data3List)/length(Data3List)};
@@ -139,14 +145,22 @@ getETSdata(ETS) ->
   end.
 
 
-receiveSensorList(AggregatedSensorList,4) -> AggregatedSensorList ++ {spawn(stationary_comp,start_loop,[]),{989,0}};
+receiveSensorList(AggregatedSensorList,4) -> AggregatedSensorList ++ [{spawn(stationary_comp,start_loop,[]),{940,0}}];
 receiveSensorList(AggregatedSensorList,N) ->
   receive
     ReceivedSensorList ->  receiveSensorList(AggregatedSensorList ++ ReceivedSensorList,N+1)
   end.
 
-checkDist(G,{PID,POS},{PID1,POS1},Radius) ->
+%checkDist(G,{PID,POS},{PID1,POS1},Radius) ->
+%  case dist(POS,POS1) < Radius of
+%    true -> digraph:add_edge(G,PID,PID1);
+%    false -> false
+%  end.
+checkDist(POS,POS1,Radius) ->
   case dist(POS,POS1) < Radius of
-    true -> digraph:add_edge(G,PID,PID1);
+    true -> true;
     false -> false
   end.
+
+sendNeighbourList(Sensor_Name,NhbrList) ->
+  sensor:update_neighbors(Sensor_Name,NhbrList).
