@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1,updateETS/2]).
+-export([start_link/2,updateETS/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -27,10 +27,10 @@
 %%%===================================================================
 
 %% @doc Spawns the server and registers the local name (unique)
--spec(start_link( MainPC_ID :: pid() ) ->
+-spec(start_link( MainPC_ID :: pid() , Which_PC :: atom()) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link(MainPC_ID) ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, MainPC_ID, []).
+start_link(MainPC_ID,Which_PC) ->
+  gen_server:start_link({local, ?SERVER}, ?MODULE, {MainPC_ID,Which_PC}, []).
 
 updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {State,Neighbors,P_comp,Battery_level,Data_list}
   gen_server:cast(?SERVER, {update_ets,Sensor_Pos,Sensor_Data}).
@@ -44,17 +44,24 @@ updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {State,Neighbors,P_comp,
 -spec(init(Args :: term()) ->
   {ok, State :: #server_state{}} | {ok, State :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
-init(MainPC_ID) ->
+init({MainPC_ID,Which_PC}) ->
   register(main_PC,MainPC_ID),
+  Offset = case Which_PC of
+             pc1 -> {0,0};
+             pc2 -> {480,0};
+             pc3 -> {0,480};
+             pc4 -> {480,480}
+           end,
   ets:new(data_base,[set,public,named_table,{heir, MainPC_ID, heirData}]),
   Num_of_sensors = rand:uniform(571) + 5, % number of sensors randomized between 6 - 576
-  Pos_list = randomize_positions(Num_of_sensors,0,0), %ToDo: offsets are temp
+  Pos_list = randomize_positions(Num_of_sensors,Offset), %ToDo: offsets are temp
   Sensor_PID_Pos_list = create_sensors(Pos_list),
   %ToDo: call a function that sends <Sensor_PID_list> to the main_PC and waits for full tree.
   % The next psudo function represents what needs to be implemented in main_pc
   % G = new(),
   % add vertices to G, each labeled after sensor_pid + pos (and one comp_pid)
   % for each couple of vertices -> if dist(P1,P2) < Radius, add edge between them
+  set_neighbors(Sensor_PID_Pos_list),
   {ok, #server_state{}}.
 
 %% @private
@@ -117,20 +124,22 @@ code_change(_OldVsn, State = #server_state{}, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-randomize_positions(Num_of_sensors,OffsetX,OffsetY) ->
-  randomize_positions([],Num_of_sensors,OffsetX,OffsetY).
+randomize_positions(Num_of_sensors,Offset) ->
+  randomize_positions([],Num_of_sensors,Offset).
 
-randomize_positions(Pos_List,0,_OffsetX,_OffsetY) ->
+randomize_positions(Pos_List,0,_Offset) ->
   % get rid of duplicates
   Pos_Set = sets:from_list(Pos_List),
   sets:to_list(Pos_Set);
-randomize_positions(Pos_List,Num_of_sensors,OffsetX,OffsetY) ->
+randomize_positions(Pos_List,Num_of_sensors,{OffsetX,OffsetY} = Offset) ->
   X = 20 * (rand:uniform(24) - 1) + OffsetX,
-  Y = 20 * (rand:uniform(24) - 1) + OffsetX,
-  randomize_positions([{X,Y} | Pos_List],Num_of_sensors-1,OffsetX,OffsetY).
+  Y = 20 * (rand:uniform(24) - 1) + OffsetY,
+  randomize_positions([{X,Y} | Pos_List],Num_of_sensors-1,Offset).
 
 create_sensors([]) -> [];
-  create_sensors([Position|Pos_list]) ->
+create_sensors([{940,0}|Pos_list]) -> create_sensors(Pos_list);   % Don't create sensor on the stationary_comp
+create_sensors([{940,20}|Pos_list]) -> create_sensors(Pos_list);  % Don't create sensor on the stationary_comp
+create_sensors([Position|Pos_list]) ->
   {ok, Sensor_PID} = sensor:start(Position),
   [{Sensor_PID, Position} | create_sensors(Pos_list)].
 
@@ -139,3 +148,10 @@ recreate_sensors([{Sensor_Pos,Sensor_Data}|Sensors_list]) ->
   sensor:start(Sensor_Pos,Sensor_Data),
   ets:insert(data_base,{Sensor_Pos,Sensor_Data}),
   recreate_sensors(Sensors_list).
+
+
+%ToDo: Temp function
+set_neighbors([]) -> ok;
+set_neighbors([{Sensor_PID, _Position} | List]) ->
+  sensor:update_neighbors(Sensor_PID,[]),
+  set_neighbors(List).
