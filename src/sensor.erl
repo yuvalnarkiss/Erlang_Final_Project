@@ -67,6 +67,7 @@ init({recover,Sensor_Pos,Sensor_Data}) ->
 										awake -> active
 									end,
 	graphic:update_sensor({Sensor_Pos,Graphic_State}),
+	update_batery_img(Sensor_Pos,100,Battery_level),
 	{ok, State, Data};
 init(Sensor_Pos) ->
 	P_comp = rand:uniform(4) + 94,  % percentage of sleep time randomize between 95%-98%
@@ -97,6 +98,7 @@ idle(cast,{update_neighbors,NhbrList}, #sensor{name = Name, position = Sensor_Po
 	Sorted_NhbrList = neighbor_sort(Sensor_Pos,NhbrList),
 	spawn_link(battery,start_battery,[Name]),
 	graphic:update_sensor({Sensor_Pos,asleep}),
+	graphic:update_battery({Sensor_Pos,100}),
 	{next_state,sleep,Data#sensor{neighbors = Sorted_NhbrList}};
 idle({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]}.	%another sensor tried to send data to this sensor while in sleep mode - data not received
@@ -115,8 +117,9 @@ sleep({call,From}, randomize_P, #sensor{position = Sensor_Pos, compared_P = P_co
 	{next_state,Next_State,New_Data,[{reply,From,Next_State}]};
 sleep({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]};	%another sensor tried to send data to this sensor while in sleep mode - data not received
-sleep(cast, {set_battery,New_level}, Data) ->
+sleep(cast, {set_battery,New_level}, #sensor{position = Sensor_Pos, battery_level = Old_Battery_Level} = Data) ->
 	server:updateETS(Data#sensor.position,{sleep,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list}),
+	update_batery_img(Sensor_Pos,Old_Battery_Level,New_level),
 	{keep_state,Data#sensor{battery_level = New_level}}.
 
 
@@ -136,8 +139,9 @@ awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #sensor{data_list
 	graphic:update_sensor({From_SensorInPos,active}),
 	timer:sleep(300),		%for graphic purposes
 	{keep_state,Data#sensor{data_list = New_Data_List},[{reply,From,sent}]};
-awake(cast, {set_battery,New_level}, Data) ->
+awake(cast, {set_battery,New_level}, #sensor{position = Sensor_Pos, battery_level = Old_Battery_Level} = Data) ->
 	server:updateETS(Data#sensor.position,{awake,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list}),
+	update_batery_img(Sensor_Pos,Old_Battery_Level,New_level),
 	{keep_state,Data#sensor{battery_level = New_level}}.
 
 
@@ -196,3 +200,17 @@ neighbor_sort(Sensor_Pos,NhbrList) ->
 	Serted_NhbrList.
 
 dist({X1,Y1},{X2,Y2}) -> trunc(math:ceil(math:sqrt(math:pow(X2 - X1, 2) + math:pow(Y2 - Y1, 2)))).
+
+update_batery_img(Sensor_Pos,Old_Battery_Level0,New_Battery_Level0) ->
+	Old_Battery_Level = trunc(Old_Battery_Level0/20) * 20,
+	New_Battery_Level = trunc(New_Battery_Level0/20) * 20,
+	case Old_Battery_Level /= New_Battery_Level of
+		true ->
+			graphic:update_battery({Sensor_Pos,New_Battery_Level});
+		false ->
+			case (Old_Battery_Level > 15) and (New_Battery_Level =< 15) of
+				true ->
+					graphic:update_battery({Sensor_Pos,low_battery});
+				false -> ok
+			end
+	end.
