@@ -113,11 +113,13 @@ update_sensor_data(Map) ->
     drQuarter -> ets:insert(drQuarter,{Sensor_Pos,maps:remove(position,Map)})
   end.
 
-quarter_current_averages(Quarter,AllPosList) ->
+%for a given quarter and a time filter that should be in minutes(i.e 5 minutes, if an hour then 60 minutes etc..), or the atom none for no filter. gives the required average data.
+quarter_cumulative_averages(Quarter,AllPosList,TimeFilter) ->
+  CurrTime = calendar:universal_time(),
   case Quarter of
     %Every case(every case is a quarter) returns a tuple which consists of the average of each data type.
     ulQuarter -> TempETS = ets:new(tempETS,[bag]),
-      _LIST = [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(ulQuarter,POS)),TempETS)|| POS <- AllPosList],
+      [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(ulQuarter,POS),CurrTime,TimeFilter),TempETS)|| POS <- AllPosList],
       TempAVG = lists:sum(lists:flatten(ets:match(TempETS,{temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{temp,'$1'}))),
       SelfTempAVG = lists:sum(lists:flatten(ets:match(TempETS,{self_temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{self_temp,'$1'}))),
       HumidityAVG = lists:sum(lists:flatten(ets:match(TempETS,{humidity,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{humidity,'$1'}))),
@@ -125,7 +127,7 @@ quarter_current_averages(Quarter,AllPosList) ->
       {TempAVG,SelfTempAVG,HumidityAVG};
 
     urQuarter -> TempETS = ets:new(tempETS,[bag]),
-      [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(urQuarter,POS)),TempETS)|| POS <- AllPosList],
+      [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(urQuarter,POS),CurrTime,TimeFilter),TempETS)|| POS <- AllPosList],
       TempAVG = lists:sum(lists:flatten(ets:match(TempETS,{temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{temp,'$1'}))),
       SelfTempAVG = lists:sum(lists:flatten(ets:match(TempETS,{self_temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{self_temp,'$1'}))),
       HumidityAVG = lists:sum(lists:flatten(ets:match(TempETS,{humidity,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{humidity,'$1'}))),
@@ -133,7 +135,7 @@ quarter_current_averages(Quarter,AllPosList) ->
       {TempAVG,SelfTempAVG,HumidityAVG};
 
     dlQuarter -> TempETS = ets:new(tempETS,[bag]),
-      [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(dlQuarter,POS)),TempETS)|| POS <- AllPosList],
+      [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(dlQuarter,POS),CurrTime,TimeFilter),TempETS)|| POS <- AllPosList],
       TempAVG = lists:sum(lists:flatten(ets:match(TempETS,{temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{temp,'$1'}))),
       SelfTempAVG = lists:sum(lists:flatten(ets:match(TempETS,{self_temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{self_temp,'$1'}))),
       HumidityAVG = lists:sum(lists:flatten(ets:match(TempETS,{humidity,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{humidity,'$1'}))),
@@ -141,7 +143,7 @@ quarter_current_averages(Quarter,AllPosList) ->
       {TempAVG,SelfTempAVG,HumidityAVG};
 
     drQuarter -> TempETS = ets:new(tempETS,[bag]),
-      [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(drQuarter,POS)),TempETS)|| POS <- AllPosList],
+      [insert_data_to_tempETS(accumulated_stat_of_sensor(ets:lookup(drQuarter,POS),CurrTime,TimeFilter),TempETS)|| POS <- AllPosList],
       TempAVG = lists:sum(lists:flatten(ets:match(TempETS,{temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{temp,'$1'}))),
       SelfTempAVG = lists:sum(lists:flatten(ets:match(TempETS,{self_temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{self_temp,'$1'}))),
       HumidityAVG = lists:sum(lists:flatten(ets:match(TempETS,{humidity,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{humidity,'$1'}))),
@@ -178,9 +180,9 @@ checkDist(POS,POS1,Radius) ->
 sendNeighbourList(Sensor_Name,NhbrList) ->
   sensor:update_neighbors(Sensor_Name,NhbrList).
 
-accumulated_stat_of_sensor(ElemList) ->
-  TempETS = ets:new(tempETS,[set]),
-  [insert_map_to_tempETS(Map,TempETS)||{_POS,Map} <- ElemList],
+accumulated_stat_of_sensor(ElemList,CurrTime,TimeFilter) ->
+  TempETS = ets:new(tempETS,[bag]),
+  [insert_map_to_tempETS(Map,TempETS,CurrTime,TimeFilter)||{_POS,Map} <- ElemList],
   TempAVG = lists:sum(lists:flatten(ets:match(TempETS,{temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{temp,'$1'}))),
   SelfTempAVG = lists:sum(lists:flatten(ets:match(TempETS,{self_temp,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{self_temp,'$1'}))),
   HumidityAVG = lists:sum(lists:flatten(ets:match(TempETS,{humidity,'$1'})))/erlang:length(lists:flatten(ets:match(TempETS,{humidity,'$1'}))),
@@ -189,14 +191,27 @@ accumulated_stat_of_sensor(ElemList) ->
 
 
 
-insert_map_to_tempETS(Map,TempETS) ->
-  ets:insert(TempETS,{time,maps:get(time,Map)}),
-  ets:insert(TempETS,{temp,maps:get(temp,Map)}),
-  ets:insert(TempETS,{self_temp,maps:get(self_temp,Map)}),
-  ets:insert(TempETS,{humidity,maps:get(humidity,Map)}).
+insert_map_to_tempETS(Map,TempETS,CurrTime,TimeFilter) ->
+   SensTimeStamp = maps:get(time,Map),
+  case check_time(CurrTime,SensTimeStamp,TimeFilter) of
+    true -> ets:insert(TempETS,{time,maps:get(time,Map)}),
+            ets:insert(TempETS,{temp,maps:get(temp,Map)}),
+            ets:insert(TempETS,{self_temp,maps:get(self_temp,Map)}),
+            ets:insert(TempETS,{humidity,maps:get(humidity,Map)});
+    false -> ok
+  end.
+
 
 insert_data_to_tempETS({TimeData,TempData,SelfTempData,HumidityData},TempETS) ->
   ets:insert(TempETS,{time,TimeData}),
   ets:insert(TempETS,{temp,TempData}),
   ets:insert(TempETS,{self_temp,SelfTempData}),
   ets:insert(TempETS,{humidity,HumidityData}).
+
+check_time(_CurrTime,_SensorTime,none) -> true;
+check_time(CurrTime,SensorTime,TimeFilter) -> %TimeFilter should be in minutes
+  TimeDiff = calendar:datetime_to_gregorian_seconds(CurrTime) - calendar:datetime_to_gregorian_seconds(SensorTime),
+  case TimeDiff =< 60*TimeFilter of
+    true -> true;
+    false -> false
+  end.
