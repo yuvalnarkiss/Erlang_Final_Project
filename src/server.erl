@@ -137,8 +137,7 @@ randomize_positions(Pos_List,Num_of_sensors,{OffsetX,OffsetY} = Offset) ->
   randomize_positions([{X,Y} | Pos_List],Num_of_sensors-1,Offset).
 
 create_sensors([]) -> [];
-create_sensors([{940,0}|Pos_list]) -> create_sensors(Pos_list);   % Don't create sensor on the stationary_comp
-create_sensors([{940,20}|Pos_list]) -> create_sensors(Pos_list);  % Don't create sensor on the stationary_comp
+create_sensors([{X,Y}|Pos_list]) when ( X >= 920 ) and ( Y =< 60 ) -> create_sensors(Pos_list);   % Don't create sensor on the stationary_comp
 create_sensors([Position|Pos_list]) ->
   {ok, Sensor_PID} = sensor:start(Position),
   [{Sensor_PID, Position} | create_sensors(Pos_list)].
