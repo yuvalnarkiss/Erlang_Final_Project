@@ -160,7 +160,7 @@ getETSdata(ETS) ->
   end.
 
 
-receiveSensorList(AggregatedSensorList,4) -> AggregatedSensorList ++ [{spawn(stationary_comp,start_loop,[]),{940,0}}];
+receiveSensorList(AggregatedSensorList,4) -> AggregatedSensorList ++ [{{stationary_comp,spawn(stationary_comp,start_loop,[])},{940,0}}];
 receiveSensorList(AggregatedSensorList,N) ->
   receive
     ReceivedSensorList ->  receiveSensorList(AggregatedSensorList ++ ReceivedSensorList,N+1)

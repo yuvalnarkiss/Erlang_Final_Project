@@ -173,6 +173,8 @@ code_change(_OldVsn, StateName, State = #sensor{}, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 send_data_to_neighbor(_Sensor_Pos,[],Data_List) -> Data_List;
+send_data_to_neighbor(_Sensor_Pos,[{stationary_comp,PID}|_NhbrList],Data_List) ->
+	PID ! {data,Data_List};
 send_data_to_neighbor(Sensor_Pos,[Neighbor_PID|NhbrList],Data_List) ->
 	Msg_status = case is_process_alive(Neighbor_PID) of
 								 true -> gen_statem:call(Neighbor_PID,{forward,{Sensor_Pos,Data_List}});
