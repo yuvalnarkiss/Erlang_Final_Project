@@ -108,10 +108,10 @@ dist({X1,Y1},{X2,Y2}) -> trunc(math:ceil(math:sqrt(math:pow(X2 - X1, 2) + math:p
 
 find_quarter(Sensor_Pos) ->
   case Sensor_Pos of
-    {X,Y} when X < 480 , Y < 480 -> ulQuarter;
-    {X,Y} when X > 479 , Y < 480 -> urQuarter;
-    {X,Y} when X < 480 , Y > 479 -> dlQuarter;
-    {X,Y} when X > 479 , Y > 479 -> drQuarter
+    {X,Y} when X < 480 , Y < 440 -> ulQuarter;
+    {X,Y} when X > 460 , Y < 440 -> urQuarter;
+    {X,Y} when X < 480 , Y > 420 -> dlQuarter;
+    {X,Y} when X > 460 , Y > 420 -> drQuarter
   end.
 
 update_sensor_data(Map) ->

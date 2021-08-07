@@ -49,8 +49,8 @@ init({MainPC_ID,Which_PC}) ->
   Offset = case Which_PC of
              pc1 -> {0,0};
              pc2 -> {480,0};
-             pc3 -> {0,480};
-             pc4 -> {480,480}
+             pc3 -> {0,420};
+             pc4 -> {480,420}
            end,
   ets:new(data_base,[set,public,named_table,{heir, main_PC, heirData}]),
   Num_of_sensors = rand:uniform(571) + 5, % number of sensors randomized between 6 - 576
@@ -128,7 +128,7 @@ randomize_positions(Pos_List,0,_Offset) ->
   sets:to_list(Pos_Set);
 randomize_positions(Pos_List,Num_of_sensors,{OffsetX,OffsetY} = Offset) ->
   X = 20 * (rand:uniform(24) - 1) + OffsetX,
-  Y = 20 * (rand:uniform(24) - 1) + OffsetY,
+  Y = 20 * (rand:uniform(22) - 1) + OffsetY,
   randomize_positions([{X,Y} | Pos_List],Num_of_sensors-1,Offset).
 
 create_sensors([]) -> [];

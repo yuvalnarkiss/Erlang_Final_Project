@@ -57,7 +57,7 @@ init([]) ->
   %ets:insert(sensor_states,[]),
   %Graphics
   WxServer = wx:new(),
-  Frame = wxFrame:new(WxServer, ?wxID_ANY, "MAP", [{size,{980, 980}}]),
+  Frame = wxFrame:new(WxServer, ?wxID_ANY, "MAP", [{size,{1400, 880}}]),
   Panel  = wxPanel:new(Frame),
   %wxFrame:createStatusBar(Frame), - in case we'll need
   wxFrame:show(Frame),
