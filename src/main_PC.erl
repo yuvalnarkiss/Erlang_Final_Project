@@ -90,7 +90,7 @@ handle_info({nodedown, PC1}, State) ->
   case ResponseList of
     [pong,_,_] -> _;%give responsibility of pc1 to pc2
                     %PC2!ets:match(ulQuarterStatus,{'$0','$1'})
-    [pang,pong,_] ->_; %give responsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
+    [pang,pong,_] ->_; %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
     [pang,pang,pong] ->_ %give responsibility of pc1 to pc4
   end,
   %NumOfServers = get(numOfServers),
