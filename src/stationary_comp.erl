@@ -15,7 +15,6 @@
 -export([start_loop/0]).
 
 start_loop() ->
-  register(stationary_comp,self()),
   start_loop([]).
 
 start_loop(Data) when length(Data) == ?DATA_LIMIT ->
@@ -23,6 +22,6 @@ start_loop(Data) when length(Data) == ?DATA_LIMIT ->
   start_loop([]);
 start_loop(Data) ->
   receive
-    {data,New_Data} -> start_loop( New_Data ++ Data );
+    {data,New_Data} -> io:format("sc got data ~p ~n", [New_Data]), start_loop( New_Data ++ Data );
     stop -> ok
   end.
