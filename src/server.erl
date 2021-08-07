@@ -53,7 +53,7 @@ init({MainPC_ID,Which_PC}) ->
              pc4 -> {480,420}
            end,
   ets:new(data_base,[set,public,named_table,{heir, main_PC, heirData}]),
-  Num_of_sensors = rand:uniform(571) + 5, % number of sensors randomized between 6 - 576
+  Num_of_sensors = rand:uniform(523) + 5, % number of sensors randomized between 6 - 576
   Pos_list = randomize_positions(Num_of_sensors,Offset),
   Sensor_PID_Pos_list = create_sensors(Pos_list),
   main_PC ! {sens_list,Sensor_PID_Pos_list},
