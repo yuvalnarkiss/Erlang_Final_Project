@@ -56,7 +56,7 @@ init([]) ->
   Panel  = wxPanel:new(Frame),
   %wxFrame:createStatusBar(Frame), - in case we'll need
   wxFrame:show(Frame),
-  BackGround = wxBitmap:new("background.bmp"),
+  BackGround = wxBitmap:new("/home/ubuntu/IdeaProjects/Erlang_Final_Project/src/background.bmp"),
   CallBackPaint =	fun(#wx{event = #wxPaint{}}, _wxObj)->
     Paint = wxBufferedPaintDC:new(Panel),
     wxDC:drawBitmap(Paint,BackGround,{0,0}),
