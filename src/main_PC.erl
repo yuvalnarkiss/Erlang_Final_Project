@@ -4,7 +4,7 @@
 
 
 % ============ Exports ===========
--export([init/1,start_link/0,handle_call/3,handle_cast/2,handle_info/2,terminate/2,transfer_data/1,getETSdata/1,shutdown/0]).
+-export([init/1,start_link/4,handle_call/3,handle_cast/2,handle_info/2,terminate/2,transfer_data/1,getETSdata/1,shutdown/0]).
 
 -record(state,{nodes,wxPid}).
 %-record('Sensor', {}).
@@ -27,26 +27,37 @@ shutdown()->
 
 
 %% @doc Spawns the server and registers the local name (unique)
-start_link() ->
-  gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
+start_link(PC1,PC2,PC3,PC4) ->
+  gen_server:start_link({global, ?MODULE}, ?MODULE, [PC1,PC2,PC3,PC4], []).
 % ============ Functions ===========
 %BY POSITION
 
-init([]) ->
+init([PC1,PC2,PC3,PC4]) ->
   %ets:new(totalData,[set]), *** Consider using ets for all the data together, because it will a duplication of an already existing data in the ets of quarters
   ets:new(ulQuarter,[bag,named_table]),
   ets:new(urQuarter,[bag,named_table]),
   ets:new(dlQuarter,[bag,named_table]),
   ets:new(drQuarter,[bag,named_table]),
   global:register_name(main_PC,self()),
+
+  % connect all nodes
   net_kernel:monitor_nodes(true),
+  timer:sleep(200),
+  net_kernel:connect_node(PC1),
+  timer:sleep(200),
+  net_kernel:connect_node(PC2),
+  timer:sleep(200),
+  net_kernel:connect_node(PC3),
+  timer:sleep(200),
+  net_kernel:connect_node(PC4),
+  timer:sleep(200),
+
+  % Start graphics
   WXServerPid = graphic:start(),
   FullSensorList = receiveSensorList([],0),
-  %Graph = digraph:new(),
+
   Pos_List = [POS|| {_PID,POS} <- FullSensorList],
   Radius = find_radius(Pos_List),
-  %[digraph:add_vertex(Graph,PID,{PID,POS}) || {PID,POS} <- FullSensorList],
-  %[[checkDist(Graph,{PID,POS},{PID1,POS1},Radius) || {PID1,POS1} <- FullSensorList] || {PID,POS} <- FullSensorList],
   [sendNeighbourList(PID,[{PID1,POS1}|| {PID1,POS1} <- FullSensorList,checkDist(POS,POS1,Radius)]) || {PID,POS} <- FullSensorList],
 
   {ok, #state{nodes =[],wxPid=WXServerPid}}.
@@ -75,7 +86,6 @@ handle_info({nodedown, _Node}, State) ->
   %    ets:delete_all_objects(PrevServer)
   %end,
   {noreply, State};
-
 handle_info(_Info, State) ->
   {noreply, State}.
 
@@ -98,10 +108,10 @@ dist({X1,Y1},{X2,Y2}) -> trunc(math:ceil(math:sqrt(math:pow(X2 - X1, 2) + math:p
 
 find_quarter(Sensor_Pos) ->
   case Sensor_Pos of
-    {X,Y} when X < 490 , Y < 490 -> ulQuarter;
-    {X,Y} when X > 489 , Y < 490 -> urQuarter;
-    {X,Y} when X < 490 , Y > 489 -> dlQuarter;
-    {X,Y} when X > 489 , Y > 489 -> drQuarter
+    {X,Y} when X < 480 , Y < 440 -> ulQuarter;
+    {X,Y} when X > 460 , Y < 440 -> urQuarter;
+    {X,Y} when X < 480 , Y > 420 -> dlQuarter;
+    {X,Y} when X > 460 , Y > 420 -> drQuarter
   end.
 
 update_sensor_data(Map) ->
@@ -160,10 +170,11 @@ getETSdata(ETS) ->
   end.
 
 
-receiveSensorList(AggregatedSensorList,4) -> AggregatedSensorList ++ [{spawn(stationary_comp,start_loop,[]),{940,0}}];
+receiveSensorList(AggregatedSensorList,4) -> AggregatedSensorList ++ [{{stationary_comp,spawn(stationary_comp,start_loop,[])},{940,0}}];
 receiveSensorList(AggregatedSensorList,N) ->
   receive
-    ReceivedSensorList ->  receiveSensorList(AggregatedSensorList ++ ReceivedSensorList,N+1)
+    {sens_list,ReceivedSensorList} ->  receiveSensorList(AggregatedSensorList ++ ReceivedSensorList,N+1);
+    _-> receiveSensorList(AggregatedSensorList,N)     % in case of receiving wrong message
   end.
 
 %checkDist(G,{PID,POS},{PID1,POS1},Radius) ->
