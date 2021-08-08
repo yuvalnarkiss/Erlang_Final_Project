@@ -57,17 +57,21 @@ init([]) ->
   %ets:insert(sensor_states,[]),
   %Graphics
   WxServer = wx:new(),
-  Frame = wxFrame:new(WxServer, ?wxID_ANY, "MAP", [{size,{980, 980}}]),
+  Frame = wxFrame:new(WxServer, ?wxID_ANY, "MAP", [{size,{1400, 900}}]),
   Panel  = wxPanel:new(Frame),
   %wxFrame:createStatusBar(Frame), - in case we'll need
   wxFrame:show(Frame),
-  BackGround = wxBitmap:new("background.bmp"),
-  Stationary_comp = wxBitmap:new("stationary_comp1.bmp"),
   CallBackPaint =	fun(#wx{event = #wxPaint{}}, _wxObj)->
     Paint = wxBufferedPaintDC:new(Panel),
+    BackGround = wxBitmap:new("background.bmp"),
     wxDC:drawBitmap(Paint,BackGround,{0,0}),
+    wxBitmap:destroy(BackGround),
+    Statistics = wxBitmap:new("statistics.bmp"),
+    wxDC:drawBitmap(Paint,Statistics,{735,0}),
+    wxBitmap:destroy(Statistics),
+    Stationary_comp = wxBitmap:new("stationary_comp1.bmp"),
     wxDC:drawBitmap(Paint,Stationary_comp,{935,5}),
-    %wxBitmap:destroy(BackGround),
+    wxBitmap:destroy(Stationary_comp),
     drawETS(Paint),
     wxBufferedPaintDC:destroy(Paint) end,
 
@@ -93,14 +97,8 @@ init([]) ->
   {stop, Reason :: term(), Reply :: term(), NewState :: #main_PC_state{}} |
   {stop, Reason :: term(), NewState :: #main_PC_state{}}).
 handle_call({update_img, {Sensor_Pos,_Sensor_State}}, _From, State) ->
-  case ets:member(screen_db,Sensor_Pos) of
-    true ->
-      [{Sensor_Pos,SensorBMP_prev}] = ets:lookup(screen_db,Sensor_Pos),
-      wxBitmap:destroy(SensorBMP_prev);
-    false -> ok
-  end,
-  SensorBMP = wxBitmap:new("sensor_inactive.bmp"),
-  ets:insert(screen_db,{Sensor_Pos,SensorBMP}),
+  SensorIMG = "sensor_inactive.bmp",
+  ets:insert(screen_db,{Sensor_Pos,SensorIMG}),
   {reply, ok, State};
 handle_call(_Request, _From, State = #main_PC_state{}) ->
   {reply, ok, State}.
@@ -112,22 +110,15 @@ handle_call(_Request, _From, State = #main_PC_state{}) ->
   {noreply, NewState :: #main_PC_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #main_PC_state{}}).
 handle_cast({update_img, {Sensor_Pos,Sensor_State}}, State) ->
-  State_img = case Sensor_State of
+  SensorIMG = case Sensor_State of
     active -> "active_sensor.bmp";
     sending -> "sensor_sending_data.bmp";
     asleep -> "sensor_sleep.bmp"
   end,
-  case ets:member(screen_db,Sensor_Pos) of
-    true ->
-      [{Sensor_Pos,SensorBMP_prev}] = ets:lookup(screen_db,Sensor_Pos),
-      wxBitmap:destroy(SensorBMP_prev);
-    false -> ok
-  end,
-  SensorBMP = wxBitmap:new(State_img),
-  ets:insert(screen_db,{Sensor_Pos,SensorBMP}),
+  ets:insert(screen_db,{Sensor_Pos,SensorIMG}),
   {noreply, State};
 handle_cast({update_btry, {Battery_Pos,Battery_State}}, State) ->
-  State_img = case Battery_State of
+  BatteryIMG = case Battery_State of
                 low_battery -> "battery_15.bmp";
                 20 -> "battery_20.bmp";
                 40 -> "battery_40.bmp";
@@ -135,14 +126,7 @@ handle_cast({update_btry, {Battery_Pos,Battery_State}}, State) ->
                 80 -> "battery_80.bmp";
                 100 -> "battery_100.bmp"
               end,
-  case ets:member(btry_db,Battery_Pos) of
-    true ->
-      [{Battery_Pos,BatteryBMP_prev}] = ets:lookup(btry_db,Battery_Pos),
-      wxBitmap:destroy(BatteryBMP_prev);
-    false -> ok
-  end,
-  BatteryBMP = wxBitmap:new(State_img),
-  ets:insert(btry_db,{Battery_Pos,BatteryBMP}),
+  ets:insert(btry_db,{Battery_Pos,BatteryIMG}),
   {noreply, State};
 handle_cast(_Request, State = #main_PC_state{}) ->
   {noreply, State}.
@@ -163,9 +147,9 @@ handle_event(#wx{event = #wxMouse{type=left_down, x=X0, y=Y0}},State) -> % when 
   Battery_state = ets:lookup(btry_db,{X,Y}),
   case Battery_state of
     [] -> ok;
-    [{_Battery_Pos,BatteryBMP}] ->
-      ets:insert(screen_db,{battery,{{X-5,Y-20},BatteryBMP}}),
-      timer:apply_after(1000,ets,delete,[screen_db, {X-5,Y-20}])
+    [{_Battery_Pos,BatteryIMG}] ->
+      ets:insert(screen_db,{battery,{{X-5,Y-20},BatteryIMG}}),
+      timer:apply_after(1000,ets,delete,[screen_db, battery])
   end,
   {noreply,State};
 
@@ -206,11 +190,13 @@ drawETS(Painter) ->
   case First of
     '$end_of_table'-> ok;
     battery ->
-      [{_Battery,Battery_State}] = ets:lookup(screen_db,First),
-      drawETS(Painter,First,Battery_State);
+      [{_Battery,BatteryIMG}] = ets:lookup(screen_db,First),
+      drawETS(Painter,First,BatteryIMG);
     _ ->
-      [{Sensor_Pos,SensorBMP}] = ets:lookup(screen_db,First),
+      [{Sensor_Pos,SensorIMG}] = ets:lookup(screen_db,First),
+      SensorBMP = wxBitmap:new(SensorIMG),
       wxDC:drawBitmap(Painter, SensorBMP, Sensor_Pos),
+      wxBitmap:destroy(SensorBMP),
       drawETS(Painter,First,none)
   end.
 drawETS(Painter,Curr,Battery) ->
@@ -219,14 +205,18 @@ drawETS(Painter,Curr,Battery) ->
     '$end_of_table' ->
       case Battery of
         none -> ok;
-        {Battery_Pos,BatteryBMP} ->
-          wxDC:drawBitmap(Painter, BatteryBMP, Battery_Pos)
+        {Battery_Pos,BatteryIMG} ->
+          BatteryBMP = wxBitmap:new(BatteryIMG),
+          wxDC:drawBitmap(Painter, BatteryBMP, Battery_Pos),
+          wxBitmap:destroy(BatteryBMP)
       end;
     battery ->
       [{_Battery,Battery_State}] = ets:lookup(screen_db,Next),
       drawETS(Painter,Next,Battery_State);
     _ ->
-      [{Sensor_Pos,SensorBMP}] = ets:lookup(screen_db,Next),
+      [{Sensor_Pos,SensorIMG}] = ets:lookup(screen_db,Next),
+      SensorBMP = wxBitmap:new(SensorIMG),
       wxDC:drawBitmap(Painter, SensorBMP, Sensor_Pos),
+      wxBitmap:destroy(SensorBMP),
       drawETS(Painter,Next,Battery)
   end.
