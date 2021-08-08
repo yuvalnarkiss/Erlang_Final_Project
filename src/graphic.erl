@@ -41,6 +41,9 @@ update_sensor(Sensor_State) ->
 update_battery(Battery_State) ->
   wx_object:cast(?SERVER, {update_btry, Battery_State}).  %{Battery_Pos,Battery_State} = Battery_State
 
+update_status(Quarter,Data) ->
+  wx_object:cast(?SERVER, {update_stat, {Quarter,Data}}).
+
 
 %%%===================================================================
 %%% wx_object callbacks
@@ -54,7 +57,8 @@ update_battery(Battery_State) ->
 init([]) ->
   ets:new(screen_db,[set,public,named_table]),
   ets:new(btry_db,[set,public,named_table]),
-  %ets:insert(sensor_states,[]),
+  ets:new(status_db,[set,public,named_table]),
+  ets:insert(status_db,[{q1,{0,0,0}},{q3,{0,0,0}},{q2,{0,0,0}},{q4,{0,0,0}},{whole,{0,0,0}}]),
   %Graphics
   WxServer = wx:new(),
   Frame = wxFrame:new(WxServer, ?wxID_ANY, "MAP", [{size,{1400, 900}}]),
@@ -73,6 +77,12 @@ init([]) ->
     wxDC:drawBitmap(Paint,Stationary_comp,{935,5}),
     wxBitmap:destroy(Stationary_comp),
     drawETS(Paint),
+
+    %Status
+    Font = wxFont:new(12,?wxDECORATIVE,?wxFONTSTYLE_NORMAL,?wxFONTWEIGHT_LIGHT,[]),
+    wxDC:setFont(Paint,Font),
+    wxDC:setTextForeground(Paint,?wxBLACK),
+    drawTEXT(Paint),
     wxBufferedPaintDC:destroy(Paint) end,
 
   % connect panel
@@ -127,6 +137,9 @@ handle_cast({update_btry, {Battery_Pos,Battery_State}}, State) ->
                 100 -> "battery_100.bmp"
               end,
   ets:insert(btry_db,{Battery_Pos,BatteryIMG}),
+  {noreply, State};
+handle_cast({update_stat, {Quarter,Data}}, State) ->
+  ets:insert(status_db,{Quarter,Data}), %{TempAVG,SelfTempAVG,HumidityAVG}
   {noreply, State};
 handle_cast(_Request, State = #main_PC_state{}) ->
   {noreply, State}.
@@ -185,23 +198,9 @@ code_change(_OldVsn, State = #main_PC_state{}, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 % ===== iterates all ets elements and update image =====
-drawETS(Painter) ->
-  First = ets:first(screen_db),
-  case First of
-    '$end_of_table'-> ok;
-    battery ->
-      [{_Battery,BatteryIMG}] = ets:lookup(screen_db,First),
-      drawETS(Painter,First,BatteryIMG);
-    _ ->
-      [{Sensor_Pos,SensorIMG}] = ets:lookup(screen_db,First),
-      SensorBMP = wxBitmap:new(SensorIMG),
-      wxDC:drawBitmap(Painter, SensorBMP, Sensor_Pos),
-      wxBitmap:destroy(SensorBMP),
-      drawETS(Painter,First,none)
-  end.
-drawETS(Painter,Curr,Battery) ->
-  Next = ets:next(screen_db,Curr),
-  case Next of
+drawETS(Painter) -> drawETS(Painter,ets:first(screen_db),none).
+drawETS(Painter,Key,Battery) ->
+  case Key of
     '$end_of_table' ->
       case Battery of
         none -> ok;
@@ -211,12 +210,41 @@ drawETS(Painter,Curr,Battery) ->
           wxBitmap:destroy(BatteryBMP)
       end;
     battery ->
-      [{_Battery,Battery_State}] = ets:lookup(screen_db,Next),
-      drawETS(Painter,Next,Battery_State);
+      [{_Battery,Battery_State}] = ets:lookup(screen_db,Key),
+      drawETS(Painter,ets:next(screen_db,Key),Battery_State);
     _ ->
-      [{Sensor_Pos,SensorIMG}] = ets:lookup(screen_db,Next),
+      [{Sensor_Pos,SensorIMG}] = ets:lookup(screen_db,Key),
       SensorBMP = wxBitmap:new(SensorIMG),
       wxDC:drawBitmap(Painter, SensorBMP, Sensor_Pos),
       wxBitmap:destroy(SensorBMP),
-      drawETS(Painter,Next,Battery)
+      drawETS(Painter,ets:next(screen_db,Key),Battery)
+  end.
+
+drawTEXT(Painter) ->  drawTEXT(Painter,ets:first(status_db)).
+drawTEXT(Painter,Key) ->
+  case Key of
+    '$end_of_table' -> ok;
+    self_temp ->
+      [{_Key,SelfTemp}] = ets:lookup(status_db,Key),
+      wxDC:drawText(Painter,integer_to_list(SelfTemp) ++ "       Celcius",{1250,765});
+    Key ->
+      [{_Key,{TempAVG,HumidityAVG}}] = ets:lookup(status_db,Key),
+      case Key of
+        whole ->
+          wxDC:drawText(Painter,integer_to_list(TempAVG) ++ "       Celcius",{1250,75}),
+          wxDC:drawText(Painter,integer_to_list(HumidityAVG) ++ "%",{1250,116});
+        q1 ->
+          wxDC:drawText(Painter,integer_to_list(TempAVG) ++ "       Celcius",{1250,213}),
+          wxDC:drawText(Painter,integer_to_list(HumidityAVG) ++ "%",{1250,254});
+        q2 ->
+          wxDC:drawText(Painter,integer_to_list(TempAVG) ++ "       Celcius",{1250,351}),
+          wxDC:drawText(Painter,integer_to_list(HumidityAVG) ++ "%",{1250,392});
+        q3 ->
+          wxDC:drawText(Painter,integer_to_list(TempAVG) ++ "       Celcius",{1250,489}),
+          wxDC:drawText(Painter,integer_to_list(HumidityAVG) ++ "%",{1250,530});
+        q4 ->
+          wxDC:drawText(Painter,integer_to_list(TempAVG) ++ "       Celcius",{1250,627}),
+          wxDC:drawText(Painter,integer_to_list(HumidityAVG) ++ "%",{1250,668})
+      end,
+      drawTEXT(Painter,ets:next(status_db,Key))
   end.
