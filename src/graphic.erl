@@ -13,7 +13,7 @@
 -include_lib("wx/include/wx.hrl").
 
 %% API
--export([start/0, update_sensor/1, update_battery/1]).
+-export([start/0, update_sensor/1, update_battery/1,update_status/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, handle_event/2, terminate/2,
