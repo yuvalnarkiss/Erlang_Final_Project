@@ -49,19 +49,14 @@ init({MainPC_ID,Which_PC}) ->
   Offset = case Which_PC of
              pc1 -> {0,0};
              pc2 -> {480,0};
-             pc3 -> {0,480};
-             pc4 -> {480,480}
+             pc3 -> {0,420};
+             pc4 -> {480,420}
            end,
-  ets:new(data_base,[set,public,named_table,{heir, MainPC_ID, heirData}]),
-  Num_of_sensors = rand:uniform(571) + 5, % number of sensors randomized between 6 - 576
-  Pos_list = randomize_positions(Num_of_sensors,Offset), %ToDo: offsets are temp
+  ets:new(data_base,[set,public,named_table,{heir, main_PC, heirData}]),
+  Num_of_sensors = rand:uniform(523) + 5, % number of sensors randomized between 6 - 576
+  Pos_list = randomize_positions(Num_of_sensors,Offset),
   Sensor_PID_Pos_list = create_sensors(Pos_list),
-  %ToDo: call a function that sends <Sensor_PID_list> to the main_PC and waits for full tree.
-  % The next psudo function represents what needs to be implemented in main_pc
-  % G = new(),
-  % add vertices to G, each labeled after sensor_pid + pos (and one comp_pid)
-  % for each couple of vertices -> if dist(P1,P2) < Radius, add edge between them
-  set_neighbors(Sensor_PID_Pos_list),
+  main_PC ! {sens_list,Sensor_PID_Pos_list},
   {ok, #server_state{}}.
 
 %% @private
@@ -133,12 +128,11 @@ randomize_positions(Pos_List,0,_Offset) ->
   sets:to_list(Pos_Set);
 randomize_positions(Pos_List,Num_of_sensors,{OffsetX,OffsetY} = Offset) ->
   X = 20 * (rand:uniform(24) - 1) + OffsetX,
-  Y = 20 * (rand:uniform(24) - 1) + OffsetY,
+  Y = 20 * (rand:uniform(22) - 1) + OffsetY,
   randomize_positions([{X,Y} | Pos_List],Num_of_sensors-1,Offset).
 
 create_sensors([]) -> [];
-create_sensors([{940,0}|Pos_list]) -> create_sensors(Pos_list);   % Don't create sensor on the stationary_comp
-create_sensors([{940,20}|Pos_list]) -> create_sensors(Pos_list);  % Don't create sensor on the stationary_comp
+create_sensors([{X,Y}|Pos_list]) when ( X >= 920 ) and ( Y =< 60 ) -> create_sensors(Pos_list);   % Don't create sensor on the stationary_comp
 create_sensors([Position|Pos_list]) ->
   {ok, Sensor_PID} = sensor:start(Position),
   [{Sensor_PID, Position} | create_sensors(Pos_list)].
@@ -148,10 +142,3 @@ recreate_sensors([{Sensor_Pos,Sensor_Data}|Sensors_list]) ->
   sensor:start(Sensor_Pos,Sensor_Data),
   ets:insert(data_base,{Sensor_Pos,Sensor_Data}),
   recreate_sensors(Sensors_list).
-
-
-%ToDo: Temp function
-set_neighbors([]) -> ok;
-set_neighbors([{Sensor_PID, _Position} | List]) ->
-  sensor:update_neighbors(Sensor_PID,[]),
-  set_neighbors(List).

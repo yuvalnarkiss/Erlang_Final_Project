@@ -36,12 +36,13 @@ shutdown()->
 
 
 %% @doc Spawns the server and registers the local name (unique)
-start_link() ->
-  gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
+start_link(PC1,PC2,PC3,PC4) ->
+  gen_server:start_link({global, ?MODULE}, ?MODULE, [PC1,PC2,PC3,PC4], []).
 % ============ Functions ===========
 %BY POSITION
 
-init([]) ->
+
+init([PC1,PC2,PC3,PC4]) ->
   ets:new(ulQuarter,[bag,named_table]),
   ets:new(ulQuarterStatus,[set,named_table]),
   ets:new(urQuarter,[bag,named_table]),
@@ -51,7 +52,20 @@ init([]) ->
   ets:new(drQuarter,[bag,named_table]),
   ets:new(drQuarterStatus,[set,named_table]),
   global:register_name(main_PC,self()),
+
+  % connect all nodes
   net_kernel:monitor_nodes(true),
+  timer:sleep(200),
+  net_kernel:connect_node(PC1),
+  timer:sleep(200),
+  net_kernel:connect_node(PC2),
+  timer:sleep(200),
+  net_kernel:connect_node(PC3),
+  timer:sleep(200),
+  net_kernel:connect_node(PC4),
+  timer:sleep(200),
+
+  % Start graphics
   WXServerPid = graphic:start(),
   FullSensorList = receiveSensorList([],0),
   Pos_List = [POS|| {_PID,POS} <- FullSensorList],
@@ -145,9 +159,6 @@ handle_info({nodedown, Node}, State) ->
   %    slave_server:crushControl(NewServer ,getScreenList(NewServer) ++ getScreenList(PrevServer) ,ets:tab2list(PrevServer)),
   %    ets:delete_all_objects(PrevServer)
   %end,
-  %{noreply, State};
-
-
 handle_info(_Info, State) ->
   {noreply, State}.
 
@@ -241,10 +252,11 @@ getETSdata(ETS) ->
   end.
 
 
-receiveSensorList(AggregatedSensorList,4) -> AggregatedSensorList ++ [{spawn(stationary_comp,start_loop,[]),{940,0}}];
+receiveSensorList(AggregatedSensorList,4) -> AggregatedSensorList ++ [{{stationary_comp,spawn(stationary_comp,start_loop,[])},{940,0}}];
 receiveSensorList(AggregatedSensorList,N) ->
   receive
-    ReceivedSensorList ->  receiveSensorList(AggregatedSensorList ++ ReceivedSensorList,N+1)
+    {sens_list,ReceivedSensorList} ->  receiveSensorList(AggregatedSensorList ++ ReceivedSensorList,N+1);
+    _-> receiveSensorList(AggregatedSensorList,N)     % in case of receiving wrong message
   end.
 
 %checkDist(G,{PID,POS},{PID1,POS1},Radius) ->
