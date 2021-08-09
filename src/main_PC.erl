@@ -86,12 +86,12 @@ handle_cast({transfer_data,ListOfDatas},State) ->
   WholeTempAVG = (ULTempAVG+URTempAVG+DLTempAVG+DRTempAVG)/4,
   WholeSelfTempAVG = (ULSelfTempAVG+URSelfTempAVG+DLSelfTempAVG+DRSelfTempAVG)/4,
   WholeHumidityAVG = (ULHumidityAVG+URHumidityAVG+DLHumidityAVG+DRHumidityAVG)/4,
-  graphic:update_status(self_temp,WholeSelfTempAVG),
-  graphic:update_status(ulQuarter,{ULTempAVG,ULHumidityAVG}),
-  graphic:update_status(urQuarter,{URTempAVG,URHumidityAVG}),
-  graphic:update_status(dlQuarter,{DLTempAVG,DLHumidityAVG}),
-  graphic:update_status(drQuarter,{DRTempAVG,DRHumidityAVG}),
-  graphic:update_status(whole,{WholeTempAVG,WholeHumidityAVG}),
+  graphic:update_status(self_temp,WholeSelfTempAVG), %in graphics, this information will be updated in the status_db ets. key is self_temp, value is WholeSelfTempAVG
+  graphic:update_status(ulQuarter,{ULTempAVG,ULHumidityAVG}),%in graphics, this information will be updated in the status_db ets. key is ulQuarter, value is the tuple {ULTempAVG,ULHumidityAVG}.
+  graphic:update_status(urQuarter,{URTempAVG,URHumidityAVG}), %Likewise.
+  graphic:update_status(dlQuarter,{DLTempAVG,DLHumidityAVG}),%Likewise.
+  graphic:update_status(drQuarter,{DRTempAVG,DRHumidityAVG}),%Likewise.
+  graphic:update_status(whole,{WholeTempAVG,WholeHumidityAVG}),%Likewise.
 
   %update graphic for each quarter
   {noreply,State}.
@@ -320,9 +320,9 @@ insert_data_to_tempETS({TimeData,TempData,SelfTempData,HumidityData},TempETS) ->
   ets:insert(TempETS,{humidity,HumidityData}).
 
 check_time(_CurrTime,_SensorTime,none) -> true;
-check_time(CurrTime,SensorTime,TimeFilter) -> %TimeFilter should be in seconds
+check_time(CurrTime,SensorTime,TimeFilter) -> %TimeFilter should be in miliseconds
   TimeDiff = calendar:datetime_to_gregorian_seconds(CurrTime) - calendar:datetime_to_gregorian_seconds(SensorTime),
-  case TimeDiff =< TimeFilter of
+  case TimeDiff/1000 =< TimeFilter/1000 of
     true -> true;
     false -> false
   end.
