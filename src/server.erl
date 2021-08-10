@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/3,updateETS/2, mergeETS/1]).
+-export([start_link/3,updateETS/2, mergeETS/1, forward/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -38,6 +38,8 @@ updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {State,Neighbors,P_comp,
 mergeETS(ETS_old_list) ->
   gen_server:cast(?SERVER, {merge_ets, ETS_old_list}).
 
+forward(Data) ->
+  gen_server:call(?SERVER, {forward, Data}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -57,10 +59,12 @@ init({MainPC_Node,PC_list,Which_PC}) ->
              pc4 -> {480,420}
            end,
   ets:new(data_base,[set,public,named_table]),
-  Num_of_sensors = rand:uniform(523) + 5, % number of sensors randomized between 6 - 576
+  Num_of_sensors = rand:uniform(508) + 20, % number of sensors randomized between 20 - 576
   Pos_list = randomize_positions(Num_of_sensors,Offset),
   Sensor_PID_Pos_list = create_sensors(MainPC_Node,PC_list,Pos_list),
-  {main_pc,MainPC_Node} ! {sens_list,Sensor_PID_Pos_list},
+  {'main_PC',MainPC_Node} ! {sens_list,Sensor_PID_Pos_list},
+
+  %timer:send_interval(500, self(), update_main_ets), -> in info send ets to main_PC
   {ok, #server_state{main_pc_node = MainPC_Node, pc_list = PC_list}}.
 
 %% @private
@@ -73,6 +77,9 @@ init({MainPC_Node,PC_list,Which_PC}) ->
   {noreply, NewState :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #server_state{}} |
   {stop, Reason :: term(), NewState :: #server_state{}}).
+handle_call({forward, {Dest_PID,Src_Pos,Data_List}}, _From, State) ->
+  Stat = sensor:forward(Dest_PID,{Src_Pos,Data_List}),
+  {reply, Stat, State};
 handle_call(_Request, _From, State = #server_state{}) ->
   {reply, ok, State}.
 
@@ -86,7 +93,6 @@ handle_cast({update_ets,Sensor_Pos,Sensor_Data}, State = #server_state{}) ->
   ets:insert(data_base, {Sensor_Pos,Sensor_Data}),
   {noreply, State};
 handle_cast({merge_ets, ETS_old_list}, #server_state{main_pc_node = MainPC_Node, pc_list = PC_list} = State) ->
-  %ETS_old_list = ets:tab2list(TableId),
   recreate_sensors(MainPC_Node,PC_list,ETS_old_list),
   {noreply, State};
 handle_cast(_Request, State = #server_state{}) ->
