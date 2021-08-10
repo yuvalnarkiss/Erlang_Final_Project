@@ -15,7 +15,7 @@
 -export([start/2,start/3]).
 
 %% gen_statem callbacks
--export([init/1, format_status/2, gotoSleep/1, set_battery/2, randomize_P/1, power_off/1, update_neighbors/2, idle/3, sleep/3, awake/3, handle_event/4, terminate/3,
+-export([init/1, format_status/2, gotoSleep/1, set_battery/2, randomize_P/1, forward/2, power_off/1, update_neighbors/2, idle/3, sleep/3, awake/3, dead/3, handle_event/4, terminate/3,
 	code_change/4, callback_mode/0]).
 
 -record(sensor, {main,pc1,pc2,pc3,pc4,name,position,compared_P,neighbors,battery_level,data_list}).
@@ -54,6 +54,12 @@ set_battery(Sensor_Name,New_level) ->
 
 randomize_P(Sensor_Name) ->
 	gen_statem:call(Sensor_Name,randomize_P).
+
+forward(Sensor_Name,Data) ->
+	try gen_statem:call(Sensor_Name,{forward,Data},{clean_timeout,100})
+	catch
+		exit:{timeout,_Call} -> abort
+	end.
 
 power_off(Sensor_Name) ->
 	gen_statem:cast(Sensor_Name,power_off).
@@ -186,15 +192,20 @@ code_change(_OldVsn, StateName, State = #sensor{}, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-send_data_to_neighbor(_Sensor_Pos,[],Data_List,{Main_PC,PC_list}) -> Data_List;
-send_data_to_neighbor(_Sensor_Pos,[{stationary_comp,PID}|_NhbrList],Data_List,{Main_PC,PC_list}) ->
-	{stationary_comp,Main_PC} ! {data,Data_List};
+send_data_to_neighbor(_Sensor_Pos,[],Data_List,_Tuple) -> Data_List;
+send_data_to_neighbor(_Sensor_Pos,[{_Stationary_comp, {940,0}}|_NhbrList],Data_List,{Main_PC,_PC_list}) ->		%ToDo earase PID of stationary_comp
+	{stationary_comp,Main_PC} ! {data,Data_List},[];
 send_data_to_neighbor(Sensor_Pos,[{Neighbor_PID,Neighbor_POS}|NhbrList],Data_List,{Main_PC,PC_list}) ->
 	Node = find_pc(Neighbor_POS,PC_list),
-	Msg_status = rpc:call(Node,gen_statem,call,[Neighbor_PID,{forward,{Sensor_Pos,Data_List}}]),
+	Self_Node = find_pc(Sensor_Pos,PC_list),
+	Msg_status = case Node == Self_Node of
+		true ->  sensor:forward(Neighbor_PID,{Sensor_Pos,Data_List});
+		false -> rpc:call(Node,server,forward,[{Neighbor_PID,Sensor_Pos,Data_List}])
+	end,
 	New_Data_List = case Msg_status of
 										sent -> [];
-										abort -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,{Main_PC,PC_list})
+										abort -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,{Main_PC,PC_list});
+										{badrpc,{'EXIT',{timeout,_Data}}} -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,{Main_PC,PC_list})
 									end,
 	New_Data_List.
 
@@ -211,7 +222,10 @@ neighbor_sort(Sensor_Pos,NhbrList) ->
 	Dist_list = [ {dist(Sensor_Pos,Mid_sens_pos) + dist(Target,Mid_sens_pos), Mid_sens_pid,Mid_sens_pos} || {Mid_sens_pid,Mid_sens_pos} <- NhbrList ],
 	Sorted_Dist_list = lists:sort(fun({A,_Pid1,_Pos1},{B,_Pid2,_Pos2}) -> A =< B end, Dist_list),
 	Sorted_NhbrList = [ {Sens_pid,Sens_pos} || {_Dist, Sens_pid,Sens_pos} <- Sorted_Dist_list ],
-	Sorted_NhbrList.
+	case length(Sorted_NhbrList) > 5 of
+		true -> {List1,_List2} = lists:split(5,Sorted_NhbrList), List1;
+		false -> Sorted_NhbrList
+	end.
 
 dist({X1,Y1},{X2,Y2}) -> trunc(math:ceil(math:sqrt(math:pow(X2 - X1, 2) + math:pow(Y2 - Y1, 2)))).
 
