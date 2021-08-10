@@ -58,7 +58,7 @@ init([]) ->
   ets:new(screen_db,[set,public,named_table]),
   ets:new(btry_db,[set,public,named_table]),
   ets:new(status_db,[set,public,named_table]),
-  ets:insert(status_db,[{q1,{0,0,0}},{q3,{0,0,0}},{q2,{0,0,0}},{q4,{0,0,0}},{whole,{0,0,0}}]),
+  ets:insert(status_db,[{q1,{0,0}},{q3,{0,0}},{q2,{0,0}},{q4,{0,0}},{whole,{0,0}}]),
   %Graphics
   WxServer = wx:new(),
   Frame = wxFrame:new(WxServer, ?wxID_ANY, "MAP", [{size,{1400, 900}}]),
@@ -121,21 +121,21 @@ handle_call(_Request, _From, State = #main_PC_state{}) ->
   {stop, Reason :: term(), NewState :: #main_PC_state{}}).
 handle_cast({update_img, {Sensor_Pos,Sensor_State}}, State) ->
   SensorIMG = case Sensor_State of
-    active -> "active_sensor.bmp";
-    sending -> "sensor_sending_data.bmp";
-    asleep -> "sensor_sleep.bmp"
-  end,
+                active -> "active_sensor.bmp";
+                sending -> "sensor_sending_data.bmp";
+                asleep -> "sensor_sleep.bmp"
+              end,
   ets:insert(screen_db,{Sensor_Pos,SensorIMG}),
   {noreply, State};
 handle_cast({update_btry, {Battery_Pos,Battery_State}}, State) ->
   BatteryIMG = case Battery_State of
-                low_battery -> "battery_15.bmp";
-                20 -> "battery_20.bmp";
-                40 -> "battery_40.bmp";
-                60 -> "battery_60.bmp";
-                80 -> "battery_80.bmp";
-                100 -> "battery_100.bmp"
-              end,
+                 low_battery -> "battery_15.bmp";
+                 20 -> "battery_20.bmp";
+                 40 -> "battery_40.bmp";
+                 60 -> "battery_60.bmp";
+                 80 -> "battery_80.bmp";
+                 100 -> "battery_100.bmp"
+               end,
   ets:insert(btry_db,{Battery_Pos,BatteryIMG}),
   {noreply, State};
 handle_cast({update_stat, {Quarter,Data}}, State) ->
