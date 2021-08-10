@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2,updateETS/2]).
+-export([start_link/3,updateETS/2, mergeETS/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -20,20 +20,24 @@
 
 -define(SERVER, ?MODULE).
 
--record(server_state, {}).
+-record(server_state, {main_pc_node,pc_list}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
 %% @doc Spawns the server and registers the local name (unique)
--spec(start_link( MainPC_ID :: pid() , Which_PC :: atom()) ->
+-spec(start_link( MainPC_Node ::node() , PC_list :: list() , Which_PC :: atom()) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link(MainPC_ID,Which_PC) ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, {MainPC_ID,Which_PC}, []).
+start_link(MainPC_Node,PC_list,Which_PC) ->
+  gen_server:start_link({local, ?SERVER}, ?MODULE, {MainPC_Node,PC_list,Which_PC}, []).
 
 updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {State,Neighbors,P_comp,Battery_level,Data_list}
   gen_server:cast(?SERVER, {update_ets,Sensor_Pos,Sensor_Data}).
+
+mergeETS(ETS_old_list) ->
+  gen_server:cast(?SERVER, {merge_ets, ETS_old_list}).
+
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -44,20 +48,20 @@ updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {State,Neighbors,P_comp,
 -spec(init(Args :: term()) ->
   {ok, State :: #server_state{}} | {ok, State :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
-init({MainPC_ID,Which_PC}) ->
-  register(main_PC,MainPC_ID),
+init({MainPC_Node,PC_list,Which_PC}) ->
+  io:format("server init ~n",[]),
   Offset = case Which_PC of
              pc1 -> {0,0};
              pc2 -> {480,0};
              pc3 -> {0,420};
              pc4 -> {480,420}
            end,
-  ets:new(data_base,[set,public,named_table,{heir, main_PC, heirData}]),
+  ets:new(data_base,[set,public,named_table]),
   Num_of_sensors = rand:uniform(523) + 5, % number of sensors randomized between 6 - 576
   Pos_list = randomize_positions(Num_of_sensors,Offset),
-  Sensor_PID_Pos_list = create_sensors(Pos_list),
-  main_PC ! {sens_list,Sensor_PID_Pos_list},
-  {ok, #server_state{}}.
+  Sensor_PID_Pos_list = create_sensors(MainPC_Node,PC_list,Pos_list),
+  {main_pc,MainPC_Node} ! {sens_list,Sensor_PID_Pos_list},
+  {ok, #server_state{main_pc_node = MainPC_Node, pc_list = PC_list}}.
 
 %% @private
 %% @doc Handling call messages
@@ -81,6 +85,10 @@ handle_call(_Request, _From, State = #server_state{}) ->
 handle_cast({update_ets,Sensor_Pos,Sensor_Data}, State = #server_state{}) ->
   ets:insert(data_base, {Sensor_Pos,Sensor_Data}),
   {noreply, State};
+handle_cast({merge_ets, ETS_old_list}, #server_state{main_pc_node = MainPC_Node, pc_list = PC_list} = State) ->
+  %ETS_old_list = ets:tab2list(TableId),
+  recreate_sensors(MainPC_Node,PC_list,ETS_old_list),
+  {noreply, State};
 handle_cast(_Request, State = #server_state{}) ->
   {noreply, State}.
 
@@ -90,10 +98,6 @@ handle_cast(_Request, State = #server_state{}) ->
   {noreply, NewState :: #server_state{}} |
   {noreply, NewState :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #server_state{}}).
-handle_info({'ETS-TRANSFER', TableId, _OldOwner, _GiftData}, State = #server_state{}) ->
-  ETS_old_list = ets:tab2list(TableId),
-  recreate_sensors(ETS_old_list),
-  {noreply, State};
 handle_info(_Info, State = #server_state{}) ->
   {noreply, State}.
 
@@ -131,14 +135,14 @@ randomize_positions(Pos_List,Num_of_sensors,{OffsetX,OffsetY} = Offset) ->
   Y = 20 * (rand:uniform(22) - 1) + OffsetY,
   randomize_positions([{X,Y} | Pos_List],Num_of_sensors-1,Offset).
 
-create_sensors([]) -> [];
-create_sensors([{X,Y}|Pos_list]) when ( X >= 920 ) and ( Y =< 60 ) -> create_sensors(Pos_list);   % Don't create sensor on the stationary_comp
-create_sensors([Position|Pos_list]) ->
-  {ok, Sensor_PID} = sensor:start(Position),
-  [{Sensor_PID, Position} | create_sensors(Pos_list)].
+create_sensors(_MainPC_Node,_PC_list,[]) -> [];
+create_sensors(MainPC_Node,PC_list,[{X,Y}|Pos_list]) when ( X >= 920 ) and ( Y =< 60 ) -> create_sensors(MainPC_Node,PC_list,Pos_list);   % Don't create sensor on the stationary_comp
+create_sensors(MainPC_Node,PC_list,[Position|Pos_list]) ->
+  {ok, Sensor_PID} = sensor:start(Position,{MainPC_Node,PC_list}),
+  [{Sensor_PID, Position} | create_sensors(MainPC_Node,PC_list,Pos_list)].
 
-recreate_sensors([]) -> ok;
-recreate_sensors([{Sensor_Pos,Sensor_Data}|Sensors_list]) ->
-  sensor:start(Sensor_Pos,Sensor_Data),
+recreate_sensors(_MainPC_Node,_PC_list,[]) -> ok;
+recreate_sensors(MainPC_Node,PC_list,[{Sensor_Pos,Sensor_Data}|Sensors_list]) ->
+  sensor:start(Sensor_Pos,Sensor_Data,{MainPC_Node,PC_list}),
   ets:insert(data_base,{Sensor_Pos,Sensor_Data}),
-  recreate_sensors(Sensors_list).
+  recreate_sensors(MainPC_Node,PC_list,Sensors_list).

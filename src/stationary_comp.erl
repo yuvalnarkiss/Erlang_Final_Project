@@ -15,6 +15,7 @@
 -export([start_loop/0]).
 
 start_loop() ->
+  register(stationary_comp,self()),
   start_loop([]).
 
 start_loop(Data) when length(Data) == ?DATA_LIMIT ->

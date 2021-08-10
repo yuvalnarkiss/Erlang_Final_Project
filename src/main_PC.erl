@@ -2,11 +2,18 @@
 -behaviour(gen_server).
 %-include("params.hrl").
 
-
+-define(ULQXBOUNDARY, 480).
+-define(ULQYBOUNDARY, 440).
+-define(URQXBOUNDARY, 460).
+-define(URQYBOUNDARY, 440).
+-define(DLQXBOUNDARY, 480).
+-define(DLQYBOUNDARY, 420).
+-define(DRQXBOUNDARY, 460).
+-define(DRQYBOUNDARY, 420).
 % ============ Exports ===========
--export([init/1,start_link/4,handle_call/3,handle_cast/2,handle_info/2,terminate/2,transfer_data/1,getETSdata/1,shutdown/0]).
+-export([init/1,start_link/4,handle_call/3,handle_cast/2,handle_info/2,terminate/2,transfer_data/1,getETSdata/1,shutdown/0,periodic_sensor_status_update/1]).
 
--record(state,{nodes,wxPid}).
+-record(state,{nodes,wxPid,info_count,sensor_pos_list}).
 %-record('Sensor', {}).
 
 %%%===================================================================
@@ -17,10 +24,12 @@
 %%% gen_server callbacks
 %%%===================================================================
 
+periodic_sensor_status_update(ETSList) ->
+  gen_server:cast(?MODULE,{periodic_sensor_status_update,ETSList}).
 
 
 transfer_data(Data) ->
-  gen_server:cast(main_PC,{transfer_data,Data}).
+  gen_server:cast(?MODULE,{transfer_data,Data}).
 
 shutdown()->
   gen_server:stop().
@@ -32,12 +41,20 @@ start_link(PC1,PC2,PC3,PC4) ->
 % ============ Functions ===========
 %BY POSITION
 
+
 init([PC1,PC2,PC3,PC4]) ->
-  %ets:new(totalData,[set]), *** Consider using ets for all the data together, because it will a duplication of an already existing data in the ets of quarters
+
+  register(main_pc, self()),
+
   ets:new(ulQuarter,[bag,named_table]),
+  ets:new(ulQuarterStatus,[set,named_table]),
   ets:new(urQuarter,[bag,named_table]),
+  ets:new(urQuarterStatus,[set,named_table]),
   ets:new(dlQuarter,[bag,named_table]),
+  ets:new(dlQuarterStatus,[set,named_table]),
   ets:new(drQuarter,[bag,named_table]),
+  ets:new(drQuarterStatus,[set,named_table]),
+  ets:new(positionsByQuarter,[bag,named_table]),
   global:register_name(main_PC,self()),
 
   % connect all nodes
@@ -54,76 +71,173 @@ init([PC1,PC2,PC3,PC4]) ->
 
   % Start graphics
   WXServerPid = graphic:start(),
-  FullSensorList = receiveSensorList([],0),
 
-  Pos_List = [POS|| {_PID,POS} <- FullSensorList],
-  Radius = find_radius(Pos_List),
-  [sendNeighbourList(PID,[{PID1,POS1}|| {PID1,POS1} <- FullSensorList,checkDist(POS,POS1,Radius)]) || {PID,POS} <- FullSensorList],
+  %start servers
+  rpc:call(PC1,server,start_link,[node(),[PC1,PC2,PC3,PC4],pc1]),
+  rpc:call(PC2,server,start_link,[node(),[PC1,PC2,PC3,PC4],pc2]),
+  rpc:call(PC3,server,start_link,[node(),[PC1,PC2,PC3,PC4],pc3]),
+  rpc:call(PC4,server,start_link,[node(),[PC1,PC2,PC3,PC4],pc4]),
 
-  {ok, #state{nodes =[],wxPid=WXServerPid}}.
+  {ok, #state{nodes =[PC1,PC2,PC3,PC4],wxPid=WXServerPid,info_count=0,sensor_pos_list=[]}}.
 
 
 handle_cast({transfer_data,ListOfDatas},State) ->
-  [update_sensor_data(Map)||  Map <-ListOfDatas],
-  {noreply,State}.
+  [update_sensor_data(Map,map)||  Map <-ListOfDatas],
+  %{TempAVG,SelfTempAVG,HumidityAVG};
+  {ULTempAVG,ULSelfTempAVG,ULHumidityAVG} = quarter_cumulative_averages(ulQuarter,lists:flatten(ets:match(positionsByQuarter,{ulQuarter,'$1'})),100),
+  {URTempAVG,URSelfTempAVG,URHumidityAVG} = quarter_cumulative_averages(urQuarter,lists:flatten(ets:match(positionsByQuarter,{urQuarter,'$1'})),100),
+  {DLTempAVG,DLSelfTempAVG,DLHumidityAVG} = quarter_cumulative_averages(dlQuarter,lists:flatten(ets:match(positionsByQuarter,{dlQuarter,'$1'})),100),
+  {DRTempAVG,DRSelfTempAVG,DRHumidityAVG} = quarter_cumulative_averages(drQuarter,lists:flatten(ets:match(positionsByQuarter,{drQuarter,'$1'})),100),
+  WholeTempAVG = (ULTempAVG+URTempAVG+DLTempAVG+DRTempAVG)/4,
+  WholeSelfTempAVG = (ULSelfTempAVG+URSelfTempAVG+DLSelfTempAVG+DRSelfTempAVG)/4,
+  WholeHumidityAVG = (ULHumidityAVG+URHumidityAVG+DLHumidityAVG+DRHumidityAVG)/4,
+  graphic:update_status(self_temp,WholeSelfTempAVG), %in graphics, this information will be updated in the status_db ets. key is self_temp, value is WholeSelfTempAVG
+  graphic:update_status(q1,{ULTempAVG,ULHumidityAVG}),%in graphics, this information will be updated in the status_db ets. key is ulQuarter, value is the tuple {ULTempAVG,ULHumidityAVG}.
+  graphic:update_status(q2,{URTempAVG,URHumidityAVG}), %Likewise.
+  graphic:update_status(q3,{DLTempAVG,DLHumidityAVG}),%Likewise.
+  graphic:update_status(q4,{DRTempAVG,DRHumidityAVG}),%Likewise.
+  graphic:update_status(whole,{WholeTempAVG,WholeHumidityAVG}),%Likewise.
 
+  %update graphic for each quarter
+  {noreply,State};
+
+handle_cast({periodic_sensor_status_update,ETSList},State) ->
+  update_sensor_data(ETSList,ets),
+  {noreply,State}.
 
 
 handle_call(example, _From, State) ->
   {reply,ok, State}.
 
 
-handle_info({nodedown, _Node}, State) ->
-  io:fwrite("node down!~n"),
-  %NumOfServers = get(numOfServers),
-  %put(numOfServers,NumOfServers-1),
-  %PrevServer = cancelNode(Node),
-  %NewServer = findFreeNode(),
-  %case NewServer of
-  %  none -> io:fwrite("all nodes are crushed~n");
-  %  _ ->put(PrevServer, NewServer), %connect the prev server to the node server origin
-  %    slave_server:crushControl(NewServer ,getScreenList(NewServer) ++ getScreenList(PrevServer) ,ets:tab2list(PrevServer)),
-  %    ets:delete_all_objects(PrevServer)
-  %end,
+handle_info({sens_list,ReceivedSensorList}, #state{nodes = Node_list, info_count = Count, sensor_pos_list = SensorList} = State) ->
+  io:format("hello Count ~p ~n",[Count]),
+  case Count+1 of
+    4 ->
+      FullSensorList =	SensorList ++ ReceivedSensorList,
+      Pos_List = [POS|| {_PID,POS} <- FullSensorList],
+      create_quarter_positions_list(Pos_List),
+      Radius = hd(find_radius(Pos_List)) + 40,
+      [sendNeighbourList(Node_list,PID,POS,[{PID1,POS1}|| {PID1,POS1} <- FullSensorList,checkDist(POS,POS1,Radius)]) || {PID,POS} <- FullSensorList];
+    _ -> ok
+  end,
+  {noreply, State#state{sensor_pos_list = SensorList ++ ReceivedSensorList,info_count = (Count+1)}};
+handle_info({nodedown, Node}, State) ->
+  case Node of
+    pc1 ->
+      PC2Ping = net_adm:ping('pc2'),
+      PC3Ping = net_adm:ping('pc3'),
+      PC4Ping = net_adm:ping('pc4'),
+      ResponseList = [PC2Ping,PC3Ping,PC4Ping],
+      case ResponseList of
+        [pong,_,_] -> rpc:call(pc2,server,mergeETS,[ets:tab2list(ulQuarterStatus)]);
+        [pang,pong,_] ->rpc:call(pc3,server,mergeETS,[ets:tab2list(ulQuarterStatus)]); %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
+        [pang,pang,pong] ->rpc:call(pc4,server,mergeETS,[ets:tab2list(ulQuarterStatus)]) %give responsibility of pc1 to pc4
+      end;
+    pc2 ->
+      PC1Ping = net_adm:ping('pc1'),
+      PC3Ping = net_adm:ping('pc3'),
+      PC4Ping = net_adm:ping('pc4'),
+      ResponseList = [PC1Ping,PC3Ping,PC4Ping],
+      case ResponseList of
+        [pong,_,_] -> rpc:call(pc1,server,mergeETS,[ets:tab2list(urQuarterStatus)]);
+        [pang,pong,_] ->rpc:call(pc3,server,mergeETS,[ets:tab2list(urQuarterStatus)]); %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
+        [pang,pang,pong] ->rpc:call(pc4,server,mergeETS,[ets:tab2list(urQuarterStatus)]) %give responsibility of pc1 to pc4
+      end;
+    pc3->
+      PC1Ping = net_adm:ping('pc1'),
+      PC2Ping = net_adm:ping('pc2'),
+      PC4Ping = net_adm:ping('pc4'),
+      ResponseList = [PC1Ping,PC2Ping,PC4Ping],
+      case ResponseList of
+        [pong,_,_] ->rpc:call(pc1,server,mergeETS,[ets:tab2list(dlQuarterStatus)]); %give responsibility of pc3 to pc1
+        [pang,pong,_] ->rpc:call(pc2,server,mergeETS,[ets:tab2list(dlQuarterStatus)]); %give responsibility of pc3 to pc2(this scenario means that pc3 is down, and ping check to pc1 was bad and ping check to pc2 was good).
+        [pang,pang,pong] ->rpc:call(pc4,server,mergeETS,[ets:tab2list(dlQuarterStatus)]) %give responsibility of pc3 to pc4
+      end;
+    pc4 ->
+      PC1Ping = net_adm:ping('pc1'),
+      PC2Ping = net_adm:ping('pc2'),
+      PC3Ping = net_adm:ping('pc3'),
+      ResponseList = [PC1Ping,PC2Ping,PC3Ping],
+      case ResponseList of
+        [pong,_,_] ->rpc:call(pc1,server,mergeETS,[ets:tab2list(drQuarterStatus)]); %give responsibility of pc4 to pc1
+        [pang,pong,_] ->rpc:call(pc2,server,mergeETS,[ets:tab2list(drQuarterStatus)]); %give responsibility of pc4 to pc2(this scenario means that pc4 is down, and ping check to pc1 was bad and ping check to pc2 was good).
+        [pang,pang,pong] ->rpc:call(pc3,server,mergeETS,[ets:tab2list(drQuarterStatus)]) %give responsibility of pc4 to pc3
+      end
+  end,
   {noreply, State};
-handle_info(_Info, State) ->
+handle_info(Request, State) ->
   {noreply, State}.
+
+%handle_info({nodedown, PC1}, State) ->
+%io:fwrite("node down!~n"),
+%PC2Ping = net_adm:ping('PC2'),
+%PC3Ping = net_adm:ping('PC3'),
+%PC4Ping = net_adm:ping('PC4'),
+%ResponseList = [PC2Ping,PC3Ping,PC4Ping],
+%case ResponseList of
+%[pong,_,_] -> _;%give responsibility of pc1 to pc2
+%              %PC2!ets:tab2list(ulQuarterStatus)
+%               rpc:call(NODE,server,funcname,[ets:tab2list(ulQuarterStatus)])
+%[pang,pong,_] ->_; %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
+% [pang,pang,pong] ->_ %give responsibility of pc1 to pc4
+% end,
+%NumOfServers = get(numOfServers),
+%put(numOfServers,NumOfServers-1),
+%PrevServer = cancelNode(Node),
+%NewServer = findFreeNode(),
+%case NewServer of
+%  none -> io:fwrite("all nodes are crushed~n");
+%  _ ->put(PrevServer, NewServer), %connect the prev server to the node server origin
+%    slave_server:crushControl(NewServer ,getScreenList(NewServer) ++ getScreenList(PrevServer) ,ets:tab2list(PrevServer)),
+%    ets:delete_all_objects(PrevServer)
+%end,
 
 terminate(_Reason, _State) ->
   ets:delete(ulQuarter),ets:delete(urQuarter),ets:delete(dlQuarter),ets:delete(drQuarter),
+  ets:delete(ulQuarterStatus),ets:delete(urQuarterStatus),ets:delete(dlQuarterStatus),ets:delete(drQuarterStatus),
   ok.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-find_radius([{_X,_Y}]) -> 0;
+find_radius([{_X,_Y}]) -> [0];
 find_radius([{X1,Y1}| Pos_list]) ->
   Dist = [ dist({X1,Y1},{X2,Y2}) || {X2, Y2} <- Pos_list],
   Min_dist = lists:min(Dist),
   Min_Radius = lists:max([ Min_dist | find_radius(Pos_list) ]),
-  Min_Radius.
+  [Min_Radius].
 
 dist({X1,Y1},{X2,Y2}) -> trunc(math:ceil(math:sqrt(math:pow(X2 - X1, 2) + math:pow(Y2 - Y1, 2)))).
 
 find_quarter(Sensor_Pos) ->
   case Sensor_Pos of
-    {X,Y} when X < 480 , Y < 440 -> ulQuarter;
-    {X,Y} when X > 460 , Y < 440 -> urQuarter;
-    {X,Y} when X < 480 , Y > 420 -> dlQuarter;
-    {X,Y} when X > 460 , Y > 420 -> drQuarter
+    {X,Y} when X < ?ULQXBOUNDARY , Y < ?ULQYBOUNDARY -> ulQuarter;
+    {X,Y} when X > ?URQXBOUNDARY , Y < ?URQYBOUNDARY -> urQuarter;
+    {X,Y} when X < ?DLQXBOUNDARY , Y > ?DLQYBOUNDARY -> dlQuarter;
+    {X,Y} when X > ?DRQXBOUNDARY , Y > ?DRQYBOUNDARY -> drQuarter
   end.
 
-update_sensor_data(Map) ->
+update_sensor_data(Map,map) ->
   Sensor_Pos = maps:get(position,Map),
   case find_quarter(Sensor_Pos) of
     ulQuarter -> ets:insert(ulQuarter,{Sensor_Pos,maps:remove(position,Map)});
     urQuarter -> ets:insert(urQuarter,{Sensor_Pos,maps:remove(position,Map)});
     dlQuarter -> ets:insert(dlQuarter,{Sensor_Pos,maps:remove(position,Map)});
     drQuarter -> ets:insert(drQuarter,{Sensor_Pos,maps:remove(position,Map)})
+  end;
+
+update_sensor_data(ETSList,ets) ->
+  {POS,_} = lists:nth(1,ETSList),
+  case find_quarter(POS) of
+    ulQuarter -> ets:insert(ulQuarterStatus,ETSList);
+    urQuarter -> ets:insert(urQuarterStatus,ETSList);
+    dlQuarter -> ets:insert(dlQuarterStatus,ETSList);
+    drQuarter -> ets:insert(drQuarterStatus,ETSList)
   end.
 
-%for a given quarter and a time filter that should be in minutes(i.e 5 minutes, if an hour then 60 minutes etc..), or the atom none for no filter. gives the required average data.
+%for a given quarter and a time filter that should be in seconds or the atom none for no filter. gives the required average data.
 quarter_cumulative_averages(Quarter,AllPosList,TimeFilter) ->
   CurrTime = calendar:universal_time(),
   case Quarter of
@@ -170,12 +284,6 @@ getETSdata(ETS) ->
   end.
 
 
-receiveSensorList(AggregatedSensorList,4) -> AggregatedSensorList ++ [{{stationary_comp,spawn(stationary_comp,start_loop,[])},{940,0}}];
-receiveSensorList(AggregatedSensorList,N) ->
-  receive
-    {sens_list,ReceivedSensorList} ->  receiveSensorList(AggregatedSensorList ++ ReceivedSensorList,N+1);
-    _-> receiveSensorList(AggregatedSensorList,N)     % in case of receiving wrong message
-  end.
 
 %checkDist(G,{PID,POS},{PID1,POS1},Radius) ->
 %  case dist(POS,POS1) < Radius of
@@ -188,9 +296,16 @@ checkDist(POS,POS1,Radius) ->
     false -> false
   end.
 
-sendNeighbourList(Sensor_Name,NhbrList) ->
-  sensor:update_neighbors(Sensor_Name,NhbrList).
+sendNeighbourList([PC1,PC2,PC3,PC4],Sensor_Name,Sensor_Pos,NhbrList) ->
+  Node = case find_quarter(Sensor_Pos) of
+           ulQuarter -> PC1;
+           urQuarter -> PC2;
+           dlQuarter -> PC3;
+           drQuarter -> PC4
+         end,
+  rpc:call(Node,sensor,update_neighbors,[Sensor_Name,NhbrList]).
 
+accumulated_stat_of_sensor([],_,_) -> none;
 accumulated_stat_of_sensor(ElemList,CurrTime,TimeFilter) ->
   TempETS = ets:new(tempETS,[bag]),
   [insert_map_to_tempETS(Map,TempETS,CurrTime,TimeFilter)||{_POS,Map} <- ElemList],
@@ -201,14 +316,14 @@ accumulated_stat_of_sensor(ElemList,CurrTime,TimeFilter) ->
   {TempAVG,SelfTempAVG,HumidityAVG}.
 
 
-
+insert_map_to_tempETS(none,_,_,_) -> none;
 insert_map_to_tempETS(Map,TempETS,CurrTime,TimeFilter) ->
-   SensTimeStamp = maps:get(time,Map),
+  SensTimeStamp = maps:get(time,Map),
   case check_time(CurrTime,SensTimeStamp,TimeFilter) of
     true -> ets:insert(TempETS,{time,maps:get(time,Map)}),
-            ets:insert(TempETS,{temp,maps:get(temp,Map)}),
-            ets:insert(TempETS,{self_temp,maps:get(self_temp,Map)}),
-            ets:insert(TempETS,{humidity,maps:get(humidity,Map)});
+      ets:insert(TempETS,{temp,maps:get(temp,Map)}),
+      ets:insert(TempETS,{self_temp,maps:get(self_temp,Map)}),
+      ets:insert(TempETS,{humidity,maps:get(humidity,Map)});
     false -> ok
   end.
 
@@ -220,9 +335,18 @@ insert_data_to_tempETS({TimeData,TempData,SelfTempData,HumidityData},TempETS) ->
   ets:insert(TempETS,{humidity,HumidityData}).
 
 check_time(_CurrTime,_SensorTime,none) -> true;
-check_time(CurrTime,SensorTime,TimeFilter) -> %TimeFilter should be in minutes
+check_time(CurrTime,SensorTime,TimeFilter) -> %TimeFilter should be in miliseconds
   TimeDiff = calendar:datetime_to_gregorian_seconds(CurrTime) - calendar:datetime_to_gregorian_seconds(SensorTime),
-  case TimeDiff =< 60*TimeFilter of
+  case TimeDiff/1000 =< TimeFilter/1000 of
     true -> true;
     false -> false
+  end.
+
+create_quarter_positions_list([]) -> [];
+create_quarter_positions_list([H|T]) ->
+  case find_quarter(H) of
+    ulQuarter -> ets:insert(positionsByQuarter,{ulQuarter,H}),create_quarter_positions_list(T);
+    urQuarter -> ets:insert(positionsByQuarter,{urQuarter,H}),create_quarter_positions_list(T);
+    dlQuarter -> ets:insert(positionsByQuarter,{dlQuarter,H}),create_quarter_positions_list(T);
+    drQuarter -> ets:insert(positionsByQuarter,{drQuarter,H}),create_quarter_positions_list(T)
   end.
