@@ -122,7 +122,9 @@ idle(cast,{update_neighbors,NhbrList}, #sensor{main = Main_PC, name = Name, posi
 	rpc:call(Main_PC,graphic,update_battery,[{Sensor_Pos,100}]),
 	{next_state,sleep,Data#sensor{neighbors = Sorted_NhbrList}};
 idle({call,From}, {forward,_Data_List}, _Data) ->
-	{keep_state_and_data,[{reply,From,abort}]}.	%another sensor tried to send data to this sensor while in sleep mode - data not received
+	{keep_state_and_data,[{reply,From,abort}]};	%another sensor tried to send data to this sensor while in sleep mode - data not received
+idle(info, {'EXIT',_PID,_Reason}, _Data) ->
+	{keep_state_and_data}.
 
 sleep({call,From}, randomize_P, #sensor{main = Main_PC, position = Sensor_Pos, compared_P = P_comp, data_list = Data_List} = Data) ->
 	P = rand:uniform(100),  % uniformly randomized floating number between 1 - 100
@@ -144,7 +146,9 @@ sleep(cast, {set_battery,New_level}, #sensor{main = Main_PC, position = Sensor_P
 	{keep_state,Data#sensor{battery_level = New_level}};
 sleep(cast, power_off, #sensor{main = Main_PC, position = Sensor_Pos} = Data) ->
 	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,inactive}]),
-	{next_state,dead,Data}.
+	{next_state,dead,Data};
+sleep(info, {'EXIT',_PID,_Reason}, _Data) ->
+	{keep_state_and_data}.
 
 
 awake({call,From}, gotoSleep, #sensor{main = Main_PC, nodes = PC_List, position = Sensor_Pos, neighbors = NhbrList, data_list = Data_List} = Data) ->
@@ -169,10 +173,14 @@ awake(cast, {set_battery,New_level}, #sensor{main = Main_PC, position = Sensor_P
 	{keep_state,Data#sensor{battery_level = New_level}};
 awake(cast, power_off, #sensor{main = Main_PC, position = Sensor_Pos} = Data) ->
 	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,inactive}]),
-	{next_state,dead,Data}.
+	{next_state,dead,Data};
+awake(info, {'EXIT',_PID,_Reason}, _Data) ->
+	{keep_state_and_data}.
 
 dead({call,From}, {forward,_Data_List}, _Data) ->
-	{keep_state_and_data,[{reply,From,abort}]}.	%another sensor tried to send data to this sensor while in sleep mode - data not received
+	{keep_state_and_data,[{reply,From,abort}]};	%another sensor tried to send data to this sensor while in sleep mode - data not received
+dead(info, {'EXIT',_PID,_Reason}, _Data) ->
+	{keep_state_and_data}.	%catch exit
 
 
 %% @private
