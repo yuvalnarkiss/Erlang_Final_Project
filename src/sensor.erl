@@ -12,7 +12,7 @@
 -behaviour(gen_statem).
 
 %% API
--export([start/2,start/3]).
+-export([start_link/2,start_link/3]).
 
 %% gen_statem callbacks
 -export([init/1, format_status/2, gotoSleep/1, set_battery/2, randomize_P/1, forward/2, power_off/1, update_neighbors/2, idle/3, sleep/3, awake/3, dead/3, handle_event/4, terminate/3,
@@ -38,12 +38,12 @@
 %% @doc Creates a gen_statem process which calls Module:init/1 to
 %% initialize. To ensure a synchronized start-up procedure, this
 %% function does not return until Module:init/1 has returned.
-start({X,Y} = Sensor_Pos,{Main_PC,PC_list}) ->
+start_link({X,Y} = Sensor_Pos,{Main_PC,PC_list}) ->
 	Sensor_Name = list_to_atom("sensor_" ++ integer_to_list(X) ++ integer_to_list(Y)),
-	gen_statem:start({local,Sensor_Name}, ?MODULE, {Sensor_Pos,Sensor_Name,{Main_PC,PC_list}}, []).
-start({X,Y} = Sensor_Pos,Sensor_Data,{Main_PC,PC_list}) ->
+	gen_statem:start_link({local,Sensor_Name}, ?MODULE, {Sensor_Pos,Sensor_Name,{Main_PC,PC_list}}, []).
+start_link({X,Y} = Sensor_Pos,Sensor_Data,{Main_PC,PC_list}) ->
 	Sensor_Name = list_to_atom("sensor_" ++ integer_to_list(X) ++ integer_to_list(Y)),
-	gen_statem:start({local,Sensor_Name},?MODULE, {recover,Sensor_Pos,Sensor_Name,Sensor_Data,{Main_PC,PC_list}}, []).
+	gen_statem:start_link({local,Sensor_Name},?MODULE, {recover,Sensor_Pos,Sensor_Name,Sensor_Data,{Main_PC,PC_list}}, []).
 
 update_neighbors(Sensor_Name,NhbrList) ->
 	gen_statem:cast(Sensor_Name,{update_neighbors,NhbrList}).
@@ -60,11 +60,15 @@ randomize_P(Sensor_Name) ->
 forward(Sensor_Name,Data) ->
 	try gen_statem:call(Sensor_Name,{forward,Data},{clean_timeout,100})
 	catch
-		exit:{timeout,_Call} -> abort
+		exit:{timeout,_Call} -> abort;
+		exit:{{nodedown,_Node},_Call} -> stop
 	end.
 
 power_off(Sensor_Name) ->
 	gen_statem:cast(Sensor_Name,power_off).
+
+sensor_down(Sensor_Name) ->
+	gen_statem:stop(Sensor_Name).
 
 %%%===================================================================
 %%% gen_statem callbacks
@@ -74,6 +78,7 @@ power_off(Sensor_Name) ->
 %% gen_statem:start_link/[3,4], this function is called by the new
 %% process to initialize.
 init({recover,Sensor_Pos,Sensor_Name,Sensor_Data,{Main_PC,PC_List}}) ->
+	process_flag(trap_exit,true),		%trap node_down
 	{State,Neighbors,P_comp,Battery_level,Data_list} = Sensor_Data,
 	Data = #sensor{main = Main_PC, nodes = PC_List, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = Neighbors, battery_level = Battery_level, data_list = Data_list},
 	spawn_link(battery,start_battery,[Sensor_Name,State,Battery_level]),
@@ -85,6 +90,7 @@ init({recover,Sensor_Pos,Sensor_Name,Sensor_Data,{Main_PC,PC_List}}) ->
 	update_batery_img(Main_PC,Sensor_Pos,100,Battery_level),
 	{ok, State, Data};
 init({Sensor_Pos,Sensor_Name,{Main_PC,PC_List}}) ->
+	process_flag(trap_exit,true),		%trap node_down
 	P_comp = rand:uniform(4) + 94,  % percentage of sleep time randomize between 95%-98%
 	Data = #sensor{main = Main_PC, nodes = PC_List, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = [], battery_level = 100, data_list = []},
 	{ok, idle, Data}.
@@ -183,7 +189,7 @@ handle_event(_EventType, _EventContent, _StateName, State = #sensor{}) ->
 %% necessary cleaning up. When it returns, the gen_statem terminates with
 %% Reason. The return value is ignored.
 terminate(_Reason, _StateName, #sensor{name = Sensor_Name}) ->
-	io:format("Sensor ~p: shutting down ~n", [Sensor_Name]), %ToDo:Temp comment
+	io:format("Sensor ~p: shutting down ~n", [Sensor_Name]),
 	ok.
 
 %% @private
@@ -207,7 +213,9 @@ send_data_to_neighbor(Sensor_Pos,[{Neighbor_PID,Neighbor_POS}|NhbrList],Data_Lis
 	New_Data_List = case Msg_status of
 										sent -> [];
 										abort -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,{Main_PC,PC_list});
-										{badrpc,{'EXIT',{timeout,_Data}}} -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,{Main_PC,PC_list})
+										{badrpc,{'EXIT',{timeout,_Data}}} -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,{Main_PC,PC_list});
+										{badrpc,_Reason} -> [];
+										stop -> []
 									end,
 	New_Data_List.
 

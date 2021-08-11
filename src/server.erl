@@ -64,7 +64,7 @@ init({MainPC_Node,PC_list,Which_PC}) ->
   Sensor_PID_Pos_list = create_sensors(MainPC_Node,PC_list,Pos_list),
   {'main_PC',MainPC_Node} ! {sens_list,Sensor_PID_Pos_list},
 
-  timer:send_interval(500, self(), update_main_ets),
+  timer:send_interval(100, self(), update_main_ets),
   {ok, #server_state{main_pc_node = MainPC_Node, pc_list = PC_list}}.
 
 %% @private
@@ -105,7 +105,7 @@ handle_cast(_Request, State = #server_state{}) ->
   {noreply, NewState :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #server_state{}}).
 handle_info(update_main_ets, #server_state{main_pc_node = MainPC_Node} = State) ->
-  rpc:call(MainPC_Node,main_PC,periodic_sensor_status_update,[ets:tab2list(data_base)]),
+  rpc:call(MainPC_Node,main_PC,periodic_sensor_status_update,[ets:tab2list(data_base),node()]),
   {noreply, State};
 handle_info(_Info, State = #server_state{}) ->
   {noreply, State}.
@@ -118,6 +118,8 @@ handle_info(_Info, State = #server_state{}) ->
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #server_state{}) -> term()).
 terminate(_Reason, _State = #server_state{}) ->
+  Sensors = registered(),
+  [sensor:sensor_down(Sensor_Name) || Sensor_Name <- Sensors],
   ok.
 
 %% @private
@@ -147,11 +149,12 @@ randomize_positions(Pos_List,Num_of_sensors,{OffsetX,OffsetY} = Offset) ->
 create_sensors(_MainPC_Node,_PC_list,[]) -> [];
 create_sensors(MainPC_Node,PC_list,[{X,Y}|Pos_list]) when ( X >= 920 ) and ( Y =< 60 ) -> create_sensors(MainPC_Node,PC_list,Pos_list);   % Don't create sensor on the stationary_comp
 create_sensors(MainPC_Node,PC_list,[Position|Pos_list]) ->
-  {ok, Sensor_PID} = sensor:start(Position,{MainPC_Node,PC_list}),
+  {ok, Sensor_PID} = sensor:start_link(Position,{MainPC_Node,PC_list}),
   [{Sensor_PID, Position} | create_sensors(MainPC_Node,PC_list,Pos_list)].
 
 recreate_sensors(_MainPC_Node,_PC_list,[]) -> ok;
 recreate_sensors(MainPC_Node,PC_list,[{Sensor_Pos,Sensor_Data}|Sensors_list]) ->
-  sensor:start(Sensor_Pos,Sensor_Data,{MainPC_Node,PC_list}),
+  sensor:start_link(Sensor_Pos,Sensor_Data,{MainPC_Node,PC_list}),
   ets:insert(data_base,{Sensor_Pos,Sensor_Data}),
   recreate_sensors(MainPC_Node,PC_list,Sensors_list).
+
