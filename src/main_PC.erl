@@ -44,16 +44,18 @@ start_link(PC1,PC2,PC3,PC4) ->
 
 init([PC1,PC2,PC3,PC4]) ->
 
-  %register(main_pc, self()),
-
+  % ets for statistics
   ets:new(ulQuarter,[bag,named_table]),
-  ets:new(ulQuarterStatus,[set,named_table]),
   ets:new(urQuarter,[bag,named_table]),
-  ets:new(urQuarterStatus,[set,named_table]),
   ets:new(dlQuarter,[bag,named_table]),
-  ets:new(dlQuarterStatus,[set,named_table]),
   ets:new(drQuarter,[bag,named_table]),
-  ets:new(drQuarterStatus,[set,named_table]),
+
+  %ets for backup
+  ets:new(pc3Backup,[set,named_table]),
+  ets:new(pc2Backup,[set,named_table]),
+  ets:new(pc1Backup,[set,named_table]),
+  ets:new(pc4Backup,[set,named_table]),
+
   ets:new(positionsByQuarter,[bag,named_table]),
   global:register_name(main_PC,self()),
 
@@ -122,47 +124,47 @@ handle_info({sens_list,ReceivedSensorList}, #state{nodes = Node_list, info_count
     _ -> ok
   end,
   {noreply, State#state{sensor_pos_list = SensorList ++ ReceivedSensorList,info_count = (Count+1)}};
-handle_info({nodedown, Node}, State) ->
+handle_info({nodedown, Node}, #state{nodes =[PC1,PC2,PC3,PC4]} = State) ->
   case Node of
-    pc1 ->
-      PC2Ping = net_adm:ping('pc2'),
-      PC3Ping = net_adm:ping('pc3'),
-      PC4Ping = net_adm:ping('pc4'),
+    PC1 ->
+      PC2Ping = net_adm:ping(PC2),
+      PC3Ping = net_adm:ping(PC3),
+      PC4Ping = net_adm:ping(PC4),
       ResponseList = [PC2Ping,PC3Ping,PC4Ping],
       case ResponseList of
-        [pong,_,_] -> rpc:call(pc2,server,mergeETS,[ets:tab2list(ulQuarterStatus)]);
-        [pang,pong,_] ->rpc:call(pc3,server,mergeETS,[ets:tab2list(ulQuarterStatus)]); %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
-        [pang,pang,pong] ->rpc:call(pc4,server,mergeETS,[ets:tab2list(ulQuarterStatus)]) %give responsibility of pc1 to pc4
+        [pong,_,_] -> rpc:call(PC2,server,mergeETS,[ets:tab2list(pc1Backup)]);
+        [pang,pong,_] ->rpc:call(PC3,server,mergeETS,[ets:tab2list(pc1Backup)]); %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
+        [pang,pang,pong] ->rpc:call(PC4,server,mergeETS,[ets:tab2list(pc1Backup)]) %give responsibility of pc1 to pc4
       end;
-    pc2 ->
-      PC1Ping = net_adm:ping('pc1'),
-      PC3Ping = net_adm:ping('pc3'),
-      PC4Ping = net_adm:ping('pc4'),
+    PC2 ->
+      PC1Ping = net_adm:ping(PC1),
+      PC3Ping = net_adm:ping(PC3),
+      PC4Ping = net_adm:ping(PC4),
       ResponseList = [PC1Ping,PC3Ping,PC4Ping],
       case ResponseList of
-        [pong,_,_] -> rpc:call(pc1,server,mergeETS,[ets:tab2list(urQuarterStatus)]);
-        [pang,pong,_] ->rpc:call(pc3,server,mergeETS,[ets:tab2list(urQuarterStatus)]); %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
-        [pang,pang,pong] ->rpc:call(pc4,server,mergeETS,[ets:tab2list(urQuarterStatus)]) %give responsibility of pc1 to pc4
+        [pong,_,_] -> rpc:call(PC1,server,mergeETS,[ets:tab2list(pc2Backup)]);
+        [pang,pong,_] ->rpc:call(PC3,server,mergeETS,[ets:tab2list(pc2Backup)]); %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
+        [pang,pang,pong] ->rpc:call(PC4,server,mergeETS,[ets:tab2list(pc2Backup)]) %give responsibility of pc1 to pc4
       end;
-    pc3->
-      PC1Ping = net_adm:ping('pc1'),
-      PC2Ping = net_adm:ping('pc2'),
-      PC4Ping = net_adm:ping('pc4'),
+    PC3->
+      PC1Ping = net_adm:ping(PC1),
+      PC2Ping = net_adm:ping(PC2),
+      PC4Ping = net_adm:ping(PC4),
       ResponseList = [PC1Ping,PC2Ping,PC4Ping],
       case ResponseList of
-        [pong,_,_] ->rpc:call(pc1,server,mergeETS,[ets:tab2list(dlQuarterStatus)]); %give responsibility of pc3 to pc1
-        [pang,pong,_] ->rpc:call(pc2,server,mergeETS,[ets:tab2list(dlQuarterStatus)]); %give responsibility of pc3 to pc2(this scenario means that pc3 is down, and ping check to pc1 was bad and ping check to pc2 was good).
-        [pang,pang,pong] ->rpc:call(pc4,server,mergeETS,[ets:tab2list(dlQuarterStatus)]) %give responsibility of pc3 to pc4
+        [pong,_,_] ->rpc:call(PC1,server,mergeETS,[ets:tab2list(pc3Backup)]); %give responsibility of pc3 to pc1
+        [pang,pong,_] ->rpc:call(PC2,server,mergeETS,[ets:tab2list(pc3Backup)]); %give responsibility of pc3 to pc2(this scenario means that pc3 is down, and ping check to pc1 was bad and ping check to pc2 was good).
+        [pang,pang,pong] ->rpc:call(PC4,server,mergeETS,[ets:tab2list(pc3Backup)]) %give responsibility of pc3 to pc4
       end;
-    pc4 ->
-      PC1Ping = net_adm:ping('pc1'),
-      PC2Ping = net_adm:ping('pc2'),
-      PC3Ping = net_adm:ping('pc3'),
+    PC4 ->
+      PC1Ping = net_adm:ping(PC1),
+      PC2Ping = net_adm:ping(PC2),
+      PC3Ping = net_adm:ping(PC3),
       ResponseList = [PC1Ping,PC2Ping,PC3Ping],
       case ResponseList of
-        [pong,_,_] ->rpc:call(pc1,server,mergeETS,[ets:tab2list(drQuarterStatus)]); %give responsibility of pc4 to pc1
-        [pang,pong,_] ->rpc:call(pc2,server,mergeETS,[ets:tab2list(drQuarterStatus)]); %give responsibility of pc4 to pc2(this scenario means that pc4 is down, and ping check to pc1 was bad and ping check to pc2 was good).
-        [pang,pang,pong] ->rpc:call(pc3,server,mergeETS,[ets:tab2list(drQuarterStatus)]) %give responsibility of pc4 to pc3
+        [pong,_,_] ->rpc:call(PC1,server,mergeETS,[ets:tab2list(pc4Backup)]); %give responsibility of pc4 to pc1
+        [pang,pong,_] ->rpc:call(PC2,server,mergeETS,[ets:tab2list(pc4Backup)]); %give responsibility of pc4 to pc2(this scenario means that pc4 is down, and ping check to pc1 was bad and ping check to pc2 was good).
+        [pang,pang,pong] ->rpc:call(PC3,server,mergeETS,[ets:tab2list(pc4Backup)]) %give responsibility of pc4 to pc3
       end
   end,
   {noreply, State};
@@ -177,8 +179,8 @@ handle_info(Request, State) ->
 %ResponseList = [PC2Ping,PC3Ping,PC4Ping],
 %case ResponseList of
 %[pong,_,_] -> _;%give responsibility of pc1 to pc2
-%              %PC2!ets:tab2list(ulQuarterStatus)
-%               rpc:call(NODE,server,funcname,[ets:tab2list(ulQuarterStatus)])
+%              %PC2!ets:tab2list(pc1Backup)
+%               rpc:call(NODE,server,funcname,[ets:tab2list(pc1Backup)])
 %[pang,pong,_] ->_; %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
 % [pang,pang,pong] ->_ %give responsibility of pc1 to pc4
 % end,
@@ -195,7 +197,7 @@ handle_info(Request, State) ->
 
 terminate(_Reason, _State) ->
   ets:delete(ulQuarter),ets:delete(urQuarter),ets:delete(dlQuarter),ets:delete(drQuarter),
-  ets:delete(ulQuarterStatus),ets:delete(urQuarterStatus),ets:delete(dlQuarterStatus),ets:delete(drQuarterStatus),
+  ets:delete(pc1Backup),ets:delete(pc2Backup),ets:delete(pc3Backup),ets:delete(pc4Backup),
   ok.
 
 %%%===================================================================
@@ -231,10 +233,10 @@ update_sensor_data(Map,map) ->
 update_sensor_data(ETSList,ets) ->
   {POS,_} = lists:nth(1,ETSList),
   case find_quarter(POS) of
-    ulQuarter -> ets:insert(ulQuarterStatus,ETSList);
-    urQuarter -> ets:insert(urQuarterStatus,ETSList);
-    dlQuarter -> ets:insert(dlQuarterStatus,ETSList);
-    drQuarter -> ets:insert(drQuarterStatus,ETSList)
+    ulQuarter -> ets:insert(pc1Backup,ETSList);
+    urQuarter -> ets:insert(pc2Backup,ETSList);
+    dlQuarter -> ets:insert(pc3Backup,ETSList);
+    drQuarter -> ets:insert(pc4Backup,ETSList)
   end.
 
 %for a given quarter and a time filter that should be in seconds or the atom none for no filter. gives the required average data.
