@@ -131,44 +131,52 @@ handle_info({nodedown, Node}, #state{nodes =[PC1,PC2,PC3,PC4]} = State) ->
       PC3Ping = net_adm:ping(PC3),
       PC4Ping = net_adm:ping(PC4),
       ResponseList = [PC2Ping,PC3Ping,PC4Ping],
-      case ResponseList of
-        [pong,_,_] -> rpc:call(PC2,server,mergeETS,[ets:tab2list(pc1Backup)]);
-        [pang,pong,_] ->rpc:call(PC3,server,mergeETS,[ets:tab2list(pc1Backup)]); %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
-        [pang,pang,pong] ->rpc:call(PC4,server,mergeETS,[ets:tab2list(pc1Backup)]) %give responsibility of pc1 to pc4
-      end;
+      New_PC1 = case ResponseList of
+                  [pong,_,_] -> PC2;
+                  [pang,pong,_] -> PC3; %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
+                  [pang,pang,pong] -> PC4  %give responsibility of pc1 to pc4
+                end,
+      rpc:call(New_PC1,server,mergeETS,[ets:tab2list(pc1Backup)]),
+      [ rpc:call(PC,ets,insert,[nodes,{pc1,New_PC1}]) || PC <- ResponseList, PC == pong];
     PC2 ->
       PC1Ping = net_adm:ping(PC1),
       PC3Ping = net_adm:ping(PC3),
       PC4Ping = net_adm:ping(PC4),
       ResponseList = [PC1Ping,PC3Ping,PC4Ping],
-      case ResponseList of
-        [pong,_,_] -> rpc:call(PC1,server,mergeETS,[ets:tab2list(pc2Backup)]);
-        [pang,pong,_] ->rpc:call(PC3,server,mergeETS,[ets:tab2list(pc2Backup)]); %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
-        [pang,pang,pong] ->rpc:call(PC4,server,mergeETS,[ets:tab2list(pc2Backup)]) %give responsibility of pc1 to pc4
-      end;
+      New_PC2 = case ResponseList of
+                  [pong,_,_] -> PC1;
+                  [pang,pong,_] -> PC3; %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
+                  [pang,pang,pong] -> PC4  %give responsibility of pc1 to pc4
+                end,
+      rpc:call(New_PC2,server,mergeETS,[ets:tab2list(pc2Backup)]),
+      [ rpc:call(PC,ets,insert,[nodes,{pc2,New_PC2}]) || PC <- ResponseList, PC == pong];
     PC3->
       PC1Ping = net_adm:ping(PC1),
       PC2Ping = net_adm:ping(PC2),
       PC4Ping = net_adm:ping(PC4),
       ResponseList = [PC1Ping,PC2Ping,PC4Ping],
-      case ResponseList of
-        [pong,_,_] ->rpc:call(PC1,server,mergeETS,[ets:tab2list(pc3Backup)]); %give responsibility of pc3 to pc1
-        [pang,pong,_] ->rpc:call(PC2,server,mergeETS,[ets:tab2list(pc3Backup)]); %give responsibility of pc3 to pc2(this scenario means that pc3 is down, and ping check to pc1 was bad and ping check to pc2 was good).
-        [pang,pang,pong] ->rpc:call(PC4,server,mergeETS,[ets:tab2list(pc3Backup)]) %give responsibility of pc3 to pc4
-      end;
+      New_PC3 = case ResponseList of
+                  [pong,_,_] -> PC1;
+                  [pang,pong,_] -> PC2; %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
+                  [pang,pang,pong] -> PC4  %give responsibility of pc1 to pc4
+                end,
+      rpc:call(New_PC3,server,mergeETS,[ets:tab2list(pc3Backup)]),
+      [ rpc:call(PC,ets,insert,[nodes,{pc3,New_PC3}]) || PC <- ResponseList, PC == pong];
     PC4 ->
       PC1Ping = net_adm:ping(PC1),
       PC2Ping = net_adm:ping(PC2),
       PC3Ping = net_adm:ping(PC3),
       ResponseList = [PC1Ping,PC2Ping,PC3Ping],
-      case ResponseList of
-        [pong,_,_] ->rpc:call(PC1,server,mergeETS,[ets:tab2list(pc4Backup)]); %give responsibility of pc4 to pc1
-        [pang,pong,_] ->rpc:call(PC2,server,mergeETS,[ets:tab2list(pc4Backup)]); %give responsibility of pc4 to pc2(this scenario means that pc4 is down, and ping check to pc1 was bad and ping check to pc2 was good).
-        [pang,pang,pong] ->rpc:call(PC3,server,mergeETS,[ets:tab2list(pc4Backup)]) %give responsibility of pc4 to pc3
-      end
+      New_PC4 = case ResponseList of
+                  [pong,_,_] -> PC1;
+                  [pang,pong,_] -> PC2; %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
+                  [pang,pang,pong] -> PC3  %give responsibility of pc1 to pc4
+                end,
+      rpc:call(New_PC4,server,mergeETS,[ets:tab2list(pc4Backup)]),
+      [ rpc:call(PC,ets,insert,[nodes,{pc4,New_PC4}]) || PC <- ResponseList, PC == pong]
   end,
   {noreply, State};
-handle_info(Request, State) ->
+handle_info(_Request, State) ->
   {noreply, State}.
 
 terminate(_Reason, _State) ->

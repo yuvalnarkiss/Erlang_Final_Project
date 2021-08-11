@@ -12,13 +12,13 @@
 -behaviour(gen_statem).
 
 %% API
--export([start_link/2,start_link/3]).
+-export([start_link/2,start_link/3, gotoSleep/1, set_battery/2, randomize_P/1, forward/2, power_off/1, update_neighbors/2, sensor_down/1]).
 
 %% gen_statem callbacks
--export([init/1, format_status/2, gotoSleep/1, set_battery/2, randomize_P/1, forward/2, power_off/1, update_neighbors/2, idle/3, sleep/3, awake/3, dead/3, handle_event/4, terminate/3,
+-export([init/1, format_status/2, idle/3, sleep/3, awake/3, dead/3, handle_event/4, terminate/3,
 	code_change/4, callback_mode/0]).
 
--record(sensor, {main,nodes,name,position,compared_P,neighbors,battery_level,data_list}).
+-record(sensor, {main,name,position,compared_P,neighbors,battery_level,data_list}).
 
 -define(SERVER, ?MODULE).
 
@@ -38,12 +38,12 @@
 %% @doc Creates a gen_statem process which calls Module:init/1 to
 %% initialize. To ensure a synchronized start-up procedure, this
 %% function does not return until Module:init/1 has returned.
-start_link({X,Y} = Sensor_Pos,{Main_PC,PC_list}) ->
+start_link({X,Y} = Sensor_Pos,Main_PC) ->
 	Sensor_Name = list_to_atom("sensor_" ++ integer_to_list(X) ++ integer_to_list(Y)),
-	gen_statem:start_link({local,Sensor_Name}, ?MODULE, {Sensor_Pos,Sensor_Name,{Main_PC,PC_list}}, []).
-start_link({X,Y} = Sensor_Pos,Sensor_Data,{Main_PC,PC_list}) ->
+	gen_statem:start_link({local,Sensor_Name}, ?MODULE, {Sensor_Pos,Sensor_Name,Main_PC}, []).
+start_link({X,Y} = Sensor_Pos,Sensor_Data,Main_PC) ->
 	Sensor_Name = list_to_atom("sensor_" ++ integer_to_list(X) ++ integer_to_list(Y)),
-	gen_statem:start_link({local,Sensor_Name},?MODULE, {recover,Sensor_Pos,Sensor_Name,Sensor_Data,{Main_PC,PC_list}}, []).
+	gen_statem:start_link({local,Sensor_Name},?MODULE, {recover,Sensor_Pos,Sensor_Name,Sensor_Data,Main_PC}, []).
 
 update_neighbors(Sensor_Name,NhbrList) ->
 	gen_statem:cast(Sensor_Name,{update_neighbors,NhbrList}).
@@ -77,10 +77,10 @@ sensor_down(Sensor_Name) ->
 %% @doc Whenever a gen_statem is started using gen_statem:start/[3,4] or
 %% gen_statem:start_link/[3,4], this function is called by the new
 %% process to initialize.
-init({recover,Sensor_Pos,Sensor_Name,Sensor_Data,{Main_PC,PC_List}}) ->
+init({recover,Sensor_Pos,Sensor_Name,Sensor_Data,Main_PC}) ->
 	process_flag(trap_exit,true),		%trap node_down
 	{State,Neighbors,P_comp,Battery_level,Data_list} = Sensor_Data,
-	Data = #sensor{main = Main_PC, nodes = PC_List, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = Neighbors, battery_level = Battery_level, data_list = Data_list},
+	Data = #sensor{main = Main_PC, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = Neighbors, battery_level = Battery_level, data_list = Data_list},
 	spawn_link(battery,start_battery,[Sensor_Name,State,Battery_level]),
 	Graphic_State = case State of
 										sleep -> asleep;
@@ -89,10 +89,10 @@ init({recover,Sensor_Pos,Sensor_Name,Sensor_Data,{Main_PC,PC_List}}) ->
 	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,Graphic_State}]),
 	update_batery_img(Main_PC,Sensor_Pos,100,Battery_level),
 	{ok, State, Data};
-init({Sensor_Pos,Sensor_Name,{Main_PC,PC_List}}) ->
+init({Sensor_Pos,Sensor_Name,Main_PC}) ->
 	process_flag(trap_exit,true),		%trap node_down
 	P_comp = rand:uniform(4) + 94,  % percentage of sleep time randomize between 95%-98%
-	Data = #sensor{main = Main_PC, nodes = PC_List, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = [], battery_level = 100, data_list = []},
+	Data = #sensor{main = Main_PC, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = [], battery_level = 100, data_list = []},
 	{ok, idle, Data}.
 
 %% @private
@@ -124,7 +124,9 @@ idle(cast,{update_neighbors,NhbrList}, #sensor{main = Main_PC, name = Name, posi
 idle({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]};	%another sensor tried to send data to this sensor while in sleep mode - data not received
 idle(info, {'EXIT',_PID,_Reason}, _Data) ->
-	{keep_state_and_data}.
+	keep_state_and_data;
+idle(info, _Info, _Data) ->
+	keep_state_and_data.
 
 sleep({call,From}, randomize_P, #sensor{main = Main_PC, position = Sensor_Pos, compared_P = P_comp, data_list = Data_List} = Data) ->
 	P = rand:uniform(100),  % uniformly randomized floating number between 1 - 100
@@ -148,11 +150,13 @@ sleep(cast, power_off, #sensor{main = Main_PC, position = Sensor_Pos} = Data) ->
 	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,inactive}]),
 	{next_state,dead,Data};
 sleep(info, {'EXIT',_PID,_Reason}, _Data) ->
-	{keep_state_and_data}.
+	keep_state_and_data;
+sleep(info, _Info, _Data) ->
+	keep_state_and_data.
 
 
-awake({call,From}, gotoSleep, #sensor{main = Main_PC, nodes = PC_List, position = Sensor_Pos, neighbors = NhbrList, data_list = Data_List} = Data) ->
-	New_Data_List = send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,{Main_PC,PC_List}),
+awake({call,From}, gotoSleep, #sensor{main = Main_PC, position = Sensor_Pos, neighbors = NhbrList, data_list = Data_List} = Data) ->
+	New_Data_List = send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,Main_PC),
 	Reply = case New_Data_List of
 						[] -> sent;
 						_ -> not_sent
@@ -175,12 +179,16 @@ awake(cast, power_off, #sensor{main = Main_PC, position = Sensor_Pos} = Data) ->
 	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,inactive}]),
 	{next_state,dead,Data};
 awake(info, {'EXIT',_PID,_Reason}, _Data) ->
-	{keep_state_and_data}.
+	keep_state_and_data;
+awake(info, _Info, _Data) ->
+	keep_state_and_data.
 
 dead({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]};	%another sensor tried to send data to this sensor while in sleep mode - data not received
 dead(info, {'EXIT',_PID,_Reason}, _Data) ->
-	{keep_state_and_data}.	%catch exit
+	keep_state_and_data;	%catch exit
+dead(info, _Info, _Data) ->
+	keep_state_and_data.
 
 
 %% @private
@@ -209,19 +217,19 @@ code_change(_OldVsn, StateName, State = #sensor{}, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 send_data_to_neighbor(_Sensor_Pos,[],Data_List,_Tuple) -> Data_List;
-send_data_to_neighbor(_Sensor_Pos,[{_Stationary_comp, {940,0}}|_NhbrList],Data_List,{Main_PC,_PC_list}) ->
+send_data_to_neighbor(_Sensor_Pos,[{_Stationary_comp, {940,0}}|_NhbrList],Data_List,Main_PC) ->
 	{stationary_comp,Main_PC} ! {data,Data_List},[];
-send_data_to_neighbor(Sensor_Pos,[{Neighbor_PID,Neighbor_POS}|NhbrList],Data_List,{Main_PC,PC_list}) ->
-	Node = find_pc(Neighbor_POS,PC_list),
-	Self_Node = find_pc(Sensor_Pos,PC_list),
+send_data_to_neighbor(Sensor_Pos,[{Neighbor_PID,Neighbor_POS}|NhbrList],Data_List,Main_PC) ->
+	Node = find_pc(Neighbor_POS),
+	Self_Node = find_pc(Sensor_Pos),
 	Msg_status = case Node == Self_Node of
 		true ->  sensor:forward(Neighbor_PID,{Sensor_Pos,Data_List});
 		false -> rpc:call(Node,server,forward,[{Neighbor_PID,Sensor_Pos,Data_List}])
 	end,
 	New_Data_List = case Msg_status of
 										sent -> [];
-										abort -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,{Main_PC,PC_list});
-										{badrpc,{'EXIT',{timeout,_Data}}} -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,{Main_PC,PC_list});
+										abort -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,Main_PC);
+										{badrpc,{'EXIT',{timeout,_Data}}} -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,Main_PC);
 										{badrpc,_Reason} -> [];
 										stop -> []
 									end,
@@ -261,10 +269,10 @@ update_batery_img(Main_PC, Sensor_Pos,Old_Battery_Level0,New_Battery_Level0) ->
 			end
 	end.
 
-find_pc(Sensor_Pos,[PC1,PC2,PC3,PC4]) ->
+find_pc(Sensor_Pos) ->
 	case Sensor_Pos of
-		{X,Y} when X < ?ULQXBOUNDARY , Y < ?ULQYBOUNDARY -> PC1;
-		{X,Y} when X > ?URQXBOUNDARY , Y < ?URQYBOUNDARY -> PC2;
-		{X,Y} when X < ?DLQXBOUNDARY , Y > ?DLQYBOUNDARY -> PC3;
-		{X,Y} when X > ?DRQXBOUNDARY , Y > ?DRQYBOUNDARY -> PC4
+		{X,Y} when X < ?ULQXBOUNDARY , Y < ?ULQYBOUNDARY -> ets:lookup_element(nodes,pc1,2);
+		{X,Y} when X > ?URQXBOUNDARY , Y < ?URQYBOUNDARY -> ets:lookup_element(nodes,pc2,2);
+		{X,Y} when X < ?DLQXBOUNDARY , Y > ?DLQYBOUNDARY -> ets:lookup_element(nodes,pc3,2);
+		{X,Y} when X > ?DRQXBOUNDARY , Y > ?DRQYBOUNDARY -> ets:lookup_element(nodes,pc4,2)
 	end.
