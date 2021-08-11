@@ -64,7 +64,7 @@ init({MainPC_Node,PC_list,Which_PC}) ->
   Sensor_PID_Pos_list = create_sensors(MainPC_Node,PC_list,Pos_list),
   {'main_PC',MainPC_Node} ! {sens_list,Sensor_PID_Pos_list},
 
-  %timer:send_interval(500, self(), update_main_ets), -> in info send ets to main_PC
+  timer:send_interval(500, self(), update_main_ets),
   {ok, #server_state{main_pc_node = MainPC_Node, pc_list = PC_list}}.
 
 %% @private
@@ -104,6 +104,9 @@ handle_cast(_Request, State = #server_state{}) ->
   {noreply, NewState :: #server_state{}} |
   {noreply, NewState :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #server_state{}}).
+handle_info(update_main_ets, #server_state{main_pc_node = MainPC_Node} = State) ->
+  rpc:call(MainPC_Node,main_PC,periodic_sensor_status_update,[ets:tab2list(data_base)]),
+  {noreply, State};
 handle_info(_Info, State = #server_state{}) ->
   {noreply, State}.
 
