@@ -11,7 +11,7 @@
 -define(DRQXBOUNDARY, 460).
 -define(DRQYBOUNDARY, 420).
 % ============ Exports ===========
--export([init/1,start_link/4,handle_call/3,handle_cast/2,handle_info/2,terminate/2,transfer_data/1,getETSdata/1,shutdown/0,periodic_sensor_status_update/1]).
+-export([init/1,start_link/4,handle_call/3,handle_cast/2,handle_info/2,terminate/2,transfer_data/1,getETSdata/1,shutdown/0,periodic_sensor_status_update/2]).
 
 -record(state,{nodes,wxPid,info_count,sensor_pos_list}).
 %-record('Sensor', {}).
@@ -24,8 +24,8 @@
 %%% gen_server callbacks
 %%%===================================================================
 
-periodic_sensor_status_update(ETSList) ->
-  gen_server:cast(?MODULE,{periodic_sensor_status_update,ETSList}).
+periodic_sensor_status_update(ETSList,Node) ->
+  gen_server:cast(?MODULE,{periodic_sensor_status_update,ETSList,Node}).
 
 
 transfer_data(Data) ->
@@ -102,8 +102,8 @@ handle_cast({transfer_data,ListOfDatas},State) ->
   %update graphic for each quarter
   {noreply,State};
 
-handle_cast({periodic_sensor_status_update,ETSList},State) ->
-  update_sensor_data(ETSList,ets),
+handle_cast({periodic_sensor_status_update,ETSList,Node},#state{nodes = PCList} = State) ->
+  update_sensor_status(ETSList,Node,PCList,ets),
   {noreply,State};
 handle_cast({example,_ETSList},State) ->
   {noreply,State}.
@@ -171,30 +171,6 @@ handle_info({nodedown, Node}, #state{nodes =[PC1,PC2,PC3,PC4]} = State) ->
 handle_info(Request, State) ->
   {noreply, State}.
 
-%handle_info({nodedown, PC1}, State) ->
-%io:fwrite("node down!~n"),
-%PC2Ping = net_adm:ping('PC2'),
-%PC3Ping = net_adm:ping('PC3'),
-%PC4Ping = net_adm:ping('PC4'),
-%ResponseList = [PC2Ping,PC3Ping,PC4Ping],
-%case ResponseList of
-%[pong,_,_] -> _;%give responsibility of pc1 to pc2
-%              %PC2!ets:tab2list(pc1Backup)
-%               rpc:call(NODE,server,funcname,[ets:tab2list(pc1Backup)])
-%[pang,pong,_] ->_; %give reasponsibility of pc1 to pc3(this scenario means that pc1 is down, and ping check to pc2 was bad and ping check to pc3 was good).
-% [pang,pang,pong] ->_ %give responsibility of pc1 to pc4
-% end,
-%NumOfServers = get(numOfServers),
-%put(numOfServers,NumOfServers-1),
-%PrevServer = cancelNode(Node),
-%NewServer = findFreeNode(),
-%case NewServer of
-%  none -> io:fwrite("all nodes are crushed~n");
-%  _ ->put(PrevServer, NewServer), %connect the prev server to the node server origin
-%    slave_server:crushControl(NewServer ,getScreenList(NewServer) ++ getScreenList(PrevServer) ,ets:tab2list(PrevServer)),
-%    ets:delete_all_objects(PrevServer)
-%end,
-
 terminate(_Reason, _State) ->
   ets:delete(ulQuarter),ets:delete(urQuarter),ets:delete(dlQuarter),ets:delete(drQuarter),
   ets:delete(pc1Backup),ets:delete(pc2Backup),ets:delete(pc3Backup),ets:delete(pc4Backup),
@@ -228,15 +204,14 @@ update_sensor_data(Map,map) ->
     urQuarter -> ets:insert(urQuarter,{Sensor_Pos,maps:remove(position,Map)});
     dlQuarter -> ets:insert(dlQuarter,{Sensor_Pos,maps:remove(position,Map)});
     drQuarter -> ets:insert(drQuarter,{Sensor_Pos,maps:remove(position,Map)})
-  end;
+  end.
 
-update_sensor_data(ETSList,ets) ->
-  {POS,_} = lists:nth(1,ETSList),
-  case find_quarter(POS) of
-    ulQuarter -> ets:insert(pc1Backup,ETSList);
-    urQuarter -> ets:insert(pc2Backup,ETSList);
-    dlQuarter -> ets:insert(pc3Backup,ETSList);
-    drQuarter -> ets:insert(pc4Backup,ETSList)
+update_sensor_status(ETSList,Node,[PC1,PC2,PC3,PC4],ets) ->
+  case Node of
+    PC1 -> ets:insert(pc1Backup,ETSList);
+    PC2 -> ets:insert(pc2Backup,ETSList);
+    PC3 -> ets:insert(pc3Backup,ETSList);
+    PC4 -> ets:insert(pc4Backup,ETSList)
   end.
 
 %for a given quarter and a time filter that should be in seconds or the atom none for no filter. gives the required average data.
@@ -259,13 +234,6 @@ getETSdata(ETS) ->
     drQuarter -> ets:match_object(drQuarter, {'$0', '$1'})
   end.
 
-
-
-%checkDist(G,{PID,POS},{PID1,POS1},Radius) ->
-%  case dist(POS,POS1) < Radius of
-%    true -> digraph:add_edge(G,PID,PID1);
-%    false -> false
-%  end.
 checkDist(POS,POS1,Radius) ->
   case dist(POS,POS1) =< Radius of
     true -> true;
