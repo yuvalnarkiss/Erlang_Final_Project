@@ -18,7 +18,7 @@
 -export([init/1, format_status/2, gotoSleep/1, set_battery/2, randomize_P/1, forward/2, power_off/1, update_neighbors/2, idle/3, sleep/3, awake/3, dead/3, handle_event/4, terminate/3,
 	code_change/4, callback_mode/0]).
 
--record(sensor, {main,pc1,pc2,pc3,pc4,name,position,compared_P,neighbors,battery_level,data_list}).
+-record(sensor, {main,nodes,name,position,compared_P,neighbors,battery_level,data_list}).
 
 -define(SERVER, ?MODULE).
 
@@ -38,10 +38,12 @@
 %% @doc Creates a gen_statem process which calls Module:init/1 to
 %% initialize. To ensure a synchronized start-up procedure, this
 %% function does not return until Module:init/1 has returned.
-start(Sensor_Pos,{Main_PC,PC_list}) ->
-	gen_statem:start(?MODULE, {Sensor_Pos,{Main_PC,PC_list}}, []).
-start(Sensor_Pos,Sensor_Data,{Main_PC,PC_list}) ->
-	gen_statem:start(?MODULE, {recover,Sensor_Pos,Sensor_Data,{Main_PC,PC_list}}, []).
+start({X,Y} = Sensor_Pos,{Main_PC,PC_list}) ->
+	Sensor_Name = list_to_atom("sensor_" ++ integer_to_list(X) ++ integer_to_list(Y)),
+	gen_statem:start({local,Sensor_Name}, ?MODULE, {Sensor_Pos,Sensor_Name,{Main_PC,PC_list}}, []).
+start({X,Y} = Sensor_Pos,Sensor_Data,{Main_PC,PC_list}) ->
+	Sensor_Name = list_to_atom("sensor_" ++ integer_to_list(X) ++ integer_to_list(Y)),
+	gen_statem:start({local,Sensor_Name},?MODULE, {recover,Sensor_Pos,Sensor_Name,Sensor_Data,{Main_PC,PC_list}}, []).
 
 update_neighbors(Sensor_Name,NhbrList) ->
 	gen_statem:cast(Sensor_Name,{update_neighbors,NhbrList}).
@@ -71,10 +73,10 @@ power_off(Sensor_Name) ->
 %% @doc Whenever a gen_statem is started using gen_statem:start/[3,4] or
 %% gen_statem:start_link/[3,4], this function is called by the new
 %% process to initialize.
-init({recover,Sensor_Pos,Sensor_Data,{Main_PC,[PC1,PC2,PC3,PC4]}}) ->
+init({recover,Sensor_Pos,Sensor_Name,Sensor_Data,{Main_PC,PC_List}}) ->
 	{State,Neighbors,P_comp,Battery_level,Data_list} = Sensor_Data,
-	Data = #sensor{main = Main_PC, pc1 = PC1, pc2 = PC2, pc3 = PC3, pc4 = PC4, name = self(), position = Sensor_Pos, compared_P = P_comp, neighbors = Neighbors, battery_level = Battery_level, data_list = Data_list},
-	spawn_link(battery,start_battery,[self(),State,Battery_level]),
+	Data = #sensor{main = Main_PC, nodes = PC_List, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = Neighbors, battery_level = Battery_level, data_list = Data_list},
+	spawn_link(battery,start_battery,[Sensor_Name,State,Battery_level]),
 	Graphic_State = case State of
 										sleep -> asleep;
 										awake -> active
@@ -82,9 +84,9 @@ init({recover,Sensor_Pos,Sensor_Data,{Main_PC,[PC1,PC2,PC3,PC4]}}) ->
 	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,Graphic_State}]),
 	update_batery_img(Main_PC,Sensor_Pos,100,Battery_level),
 	{ok, State, Data};
-init({Sensor_Pos,{Main_PC,[PC1,PC2,PC3,PC4]}}) ->
+init({Sensor_Pos,Sensor_Name,{Main_PC,PC_List}}) ->
 	P_comp = rand:uniform(4) + 94,  % percentage of sleep time randomize between 95%-98%
-	Data = #sensor{main = Main_PC, pc1 = PC1, pc2 = PC2, pc3 = PC3, pc4 = PC4, name = self(), position = Sensor_Pos, compared_P = P_comp, neighbors = [], battery_level = 100, data_list = []},
+	Data = #sensor{main = Main_PC, nodes = PC_List, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = [], battery_level = 100, data_list = []},
 	{ok, idle, Data}.
 
 %% @private
@@ -139,8 +141,8 @@ sleep(cast, power_off, #sensor{main = Main_PC, position = Sensor_Pos} = Data) ->
 	{next_state,dead,Data}.
 
 
-awake({call,From}, gotoSleep, #sensor{main = Main_PC, pc1 = PC1, pc2 = PC2, pc3 = PC3, pc4 = PC4, position = Sensor_Pos, neighbors = NhbrList, data_list = Data_List} = Data) ->
-	New_Data_List = send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,{Main_PC,[PC1,PC2,PC3,PC4]}),
+awake({call,From}, gotoSleep, #sensor{main = Main_PC, nodes = PC_List, position = Sensor_Pos, neighbors = NhbrList, data_list = Data_List} = Data) ->
+	New_Data_List = send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,{Main_PC,PC_List}),
 	Reply = case New_Data_List of
 						[] -> sent;
 						_ -> not_sent
@@ -180,8 +182,8 @@ handle_event(_EventType, _EventContent, _StateName, State = #sensor{}) ->
 %% terminate. It should be the opposite of Module:init/1 and do any
 %% necessary cleaning up. When it returns, the gen_statem terminates with
 %% Reason. The return value is ignored.
-terminate(_Reason, _StateName, #sensor{main = Main_PC, position = Sensor_Pos}) ->
-	io:format("Sensor ~p: shutting down ~n", [self()]), %ToDo:Temp comment
+terminate(_Reason, _StateName, #sensor{name = Sensor_Name}) ->
+	io:format("Sensor ~p: shutting down ~n", [Sensor_Name]), %ToDo:Temp comment
 	ok.
 
 %% @private
@@ -193,7 +195,7 @@ code_change(_OldVsn, StateName, State = #sensor{}, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 send_data_to_neighbor(_Sensor_Pos,[],Data_List,_Tuple) -> Data_List;
-send_data_to_neighbor(_Sensor_Pos,[{_Stationary_comp, {940,0}}|_NhbrList],Data_List,{Main_PC,_PC_list}) ->		%ToDo earase PID of stationary_comp
+send_data_to_neighbor(_Sensor_Pos,[{_Stationary_comp, {940,0}}|_NhbrList],Data_List,{Main_PC,_PC_list}) ->
 	{stationary_comp,Main_PC} ! {data,Data_List},[];
 send_data_to_neighbor(Sensor_Pos,[{Neighbor_PID,Neighbor_POS}|NhbrList],Data_List,{Main_PC,PC_list}) ->
 	Node = find_pc(Neighbor_POS,PC_list),
