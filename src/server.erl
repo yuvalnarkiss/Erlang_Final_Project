@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/3,updateETS/2, mergeETS/1, forward/1]).
+-export([start_link/3, mergeETS/1, forward/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -31,9 +31,6 @@
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link(MainPC_Node,PC_list,Which_PC) ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, {MainPC_Node,PC_list,Which_PC}, []).
-
-updateETS(Sensor_Pos,Sensor_Data) ->    % Sensor_Data = {State,Neighbors,P_comp,Battery_level,Data_list}
-  gen_server:cast(?SERVER, {update_ets,Sensor_Pos,Sensor_Data}).
 
 mergeETS(ETS_old_list) ->
   gen_server:cast(?SERVER, {merge_ets, ETS_old_list}).
@@ -59,6 +56,8 @@ init({MainPC_Node,[PC1,PC2,PC3,PC4],Which_PC}) ->
              pc4 -> {480,420}
            end,
   ets:new(nodes,[set,public,named_table]),
+  ets:new(graphic_sensor,[set,public,named_table]),
+  ets:new(graphic_battery,[set,public,named_table]),
   ets:new(data_base,[set,public,named_table]),
   Num_of_sensors = rand:uniform(508) + 20, % number of sensors randomized between 20 - 576
   Pos_list = randomize_positions(Num_of_sensors,Offset),
@@ -66,7 +65,7 @@ init({MainPC_Node,[PC1,PC2,PC3,PC4],Which_PC}) ->
   {'main_PC',MainPC_Node} ! {sens_list,Sensor_PID_Pos_list},
 
   ets:insert(nodes,[{pc1,PC1},{pc2,PC2},{pc3,PC3},{pc4,PC4}]),
-  timer:send_interval(100, self(), update_main_ets),
+  timer:send_interval(80, self(), update_main_ets),
   {ok, #server_state{main_pc_node = MainPC_Node}}.
 
 %% @private
@@ -91,9 +90,6 @@ handle_call(_Request, _From, State = #server_state{}) ->
   {noreply, NewState :: #server_state{}} |
   {noreply, NewState :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #server_state{}}).
-handle_cast({update_ets,Sensor_Pos,Sensor_Data}, State = #server_state{}) ->
-  ets:insert(data_base, {Sensor_Pos,Sensor_Data}),
-  {noreply, State};
 handle_cast({merge_ets, ETS_old_list}, #server_state{main_pc_node = MainPC_Node} = State) ->
   recreate_sensors(MainPC_Node,ETS_old_list),
   {noreply, State};
@@ -108,6 +104,8 @@ handle_cast(_Request, State = #server_state{}) ->
   {stop, Reason :: term(), NewState :: #server_state{}}).
 handle_info(update_main_ets, #server_state{main_pc_node = MainPC_Node} = State) ->
   rpc:call(MainPC_Node,main_PC,periodic_sensor_status_update,[ets:tab2list(data_base),node()]),
+  rpc:call(MainPC_Node,graphic,update_sensor_ets,[ets:tab2list(graphic_sensor)]),
+  rpc:call(MainPC_Node,graphic,update_battery_ets,[ets:tab2list(graphic_battery)]),
   {noreply, State};
 handle_info(_Info, State = #server_state{}) ->
   {noreply, State}.

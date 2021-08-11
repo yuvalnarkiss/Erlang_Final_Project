@@ -13,7 +13,7 @@
 -include_lib("wx/include/wx.hrl").
 
 %% API
--export([start/0, update_sensor/1, update_battery/1,update_status/2]).
+-export([start/0, update_sensor_ets/1, update_battery_ets/1,update_status/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, handle_event/2, terminate/2,
@@ -33,13 +33,11 @@
 start() ->
   wx_object:start({local, ?SERVER}, ?MODULE, [], []).
 
-update_sensor({_Pos, inactive}) ->
-  wx_object:call(?SERVER, {update_img, {_Pos, inactive}});
-update_sensor(Sensor_State) ->
-  wx_object:cast(?SERVER, {update_img, Sensor_State}).
+update_sensor_ets(Graphic_ets_list) ->
+  wx_object:cast(?SERVER, {update_sensor_ets, Graphic_ets_list}).
 
-update_battery(Battery_State) ->
-  wx_object:cast(?SERVER, {update_btry, Battery_State}).  %{Battery_Pos,Battery_State} = Battery_State
+update_battery_ets(Graphic_ets_list) ->
+  wx_object:cast(?SERVER, {update_battery_ets, Graphic_ets_list}).
 
 update_status(Quarter,Data) ->
   wx_object:cast(?SERVER, {update_stat, {Quarter,Data}}).
@@ -106,10 +104,6 @@ init([]) ->
   {noreply, NewState :: #main_PC_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #main_PC_state{}} |
   {stop, Reason :: term(), NewState :: #main_PC_state{}}).
-handle_call({update_img, {Sensor_Pos,_Sensor_State}}, _From, State) ->
-  SensorIMG = "sensor_inactive.bmp",
-  ets:insert(screen_db,{Sensor_Pos,SensorIMG}),
-  {reply, ok, State};
 handle_call(_Request, _From, State = #main_PC_state{}) ->
   {reply, ok, State}.
 
@@ -119,28 +113,13 @@ handle_call(_Request, _From, State = #main_PC_state{}) ->
   {noreply, NewState :: #main_PC_state{}} |
   {noreply, NewState :: #main_PC_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #main_PC_state{}}).
-handle_cast({update_img, {Sensor_Pos,Sensor_State}}, State) ->
-  SensorIMG = case Sensor_State of
-                active -> "active_sensor.bmp";
-                sending -> "sensor_sending_data.bmp";
-                asleep -> "sensor_sleep.bmp"
-              end,
-  ets:insert(screen_db,{Sensor_Pos,SensorIMG}),
+handle_cast({update_sensor_ets, Graphic_ets_list}, State) ->
+  Draw_List = [{Sensor_Pos,state_to_img(Sensor_State)} || {Sensor_Pos,Sensor_State} <- Graphic_ets_list],
+  ets:insert(screen_db,Draw_List),
   {noreply, State};
-handle_cast({update_btry, {Battery_Pos,Battery_State}}, State) ->
-  case Battery_State of
-     0 -> ets:delete(btry_db,Battery_Pos);
-     _ ->
-       BatteryIMG = case Battery_State of
-                      low_battery -> "battery_15.bmp";
-                      20 -> "battery_20.bmp";
-                      40 -> "battery_40.bmp";
-                      60 -> "battery_60.bmp";
-                      80 -> "battery_80.bmp";
-                      100 -> "battery_100.bmp"
-                    end,
-       ets:insert(btry_db,{Battery_Pos,BatteryIMG})
-   end,
+handle_cast({update_battery_ets, Graphic_ets_list}, State) ->
+  Draw_List = [{Battery_Pos,b_state_to_img(Battery_State,Battery_Pos)} || {Battery_Pos,Battery_State} <- Graphic_ets_list],
+  ets:insert(btry_db,Draw_List),
   {noreply, State};
 handle_cast({update_stat, {Quarter,Data}}, State) ->
   ets:insert(status_db,{Quarter,Data}), %{TempAVG,SelfTempAVG,HumidityAVG}
@@ -244,4 +223,25 @@ drawTEXT(Painter,Key) ->
       wxDC:drawText(Painter,io_lib:format("~.3f",[TempAVG]) ++ "    Celcius",Pos1),
       wxDC:drawText(Painter,io_lib:format("~.3f",[HumidityAVG]) ++ "%",Pos2),
       drawTEXT(Painter,ets:next(status_db,Key))
+  end.
+
+state_to_img(State) ->
+  case State of
+    active -> "active_sensor.bmp";
+    sending -> "sensor_sending_data.bmp";
+    asleep -> "sensor_sleep.bmp";
+    inactive -> "sensor_inactive.bmp"
+  end.
+
+b_state_to_img(State,Pos) ->
+  case State of
+    0 -> ets:delete(btry_db,Pos);
+    _ -> case State of
+           low_battery -> "battery_15.bmp";
+           20 -> "battery_20.bmp";
+           40 -> "battery_40.bmp";
+           60 -> "battery_60.bmp";
+           80 -> "battery_80.bmp";
+           100 -> "battery_100.bmp"
+         end
   end.

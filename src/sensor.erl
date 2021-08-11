@@ -86,7 +86,7 @@ init({recover,Sensor_Pos,Sensor_Name,Sensor_Data,Main_PC}) ->
 										sleep -> asleep;
 										awake -> active
 									end,
-	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,Graphic_State}]),
+	ets:insert(graphic_sensor,{Sensor_Pos,Graphic_State}),
 	update_batery_img(Main_PC,Sensor_Pos,100,Battery_level),
 	{ok, State, Data};
 init({Sensor_Pos,Sensor_Name,Main_PC}) ->
@@ -118,8 +118,8 @@ format_status(_Opt, [_PDict, _StateName, _State]) ->
 idle(cast,{update_neighbors,NhbrList}, #sensor{main = Main_PC, name = Name, position = Sensor_Pos} = Data) ->
 	Sorted_NhbrList = neighbor_sort(Sensor_Pos,NhbrList),
 	spawn_link(battery,start_battery,[Name]),
-	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,asleep}]),
-	rpc:call(Main_PC,graphic,update_battery,[{Sensor_Pos,100}]),
+	ets:insert(graphic_sensor,{Sensor_Pos,asleep}),
+	ets:insert(graphic_battery,{Sensor_Pos,100}),
 	{next_state,sleep,Data#sensor{neighbors = Sorted_NhbrList}};
 idle({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]};	%another sensor tried to send data to this sensor while in sleep mode - data not received
@@ -132,7 +132,7 @@ sleep({call,From}, randomize_P, #sensor{main = Main_PC, position = Sensor_Pos, c
 	P = rand:uniform(100),  % uniformly randomized floating number between 1 - 100
 	{Next_State, New_Data} = case P > P_comp of
 														 true ->
-															 rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,active}]),
+															 ets:insert(graphic_sensor,{Sensor_Pos,active}),
 															 Data_map = monitor_data(Sensor_Pos),
 															 ets:insert(data_base, {Sensor_Pos,{awake,Data#sensor.neighbors,P_comp,Data#sensor.battery_level,Data_List ++ [Data_map]}}),
 															 {awake, Data#sensor{data_list = Data_List ++ [Data_map]}};
@@ -147,7 +147,7 @@ sleep(cast, {set_battery,New_level}, #sensor{main = Main_PC, position = Sensor_P
 	update_batery_img(Main_PC,Sensor_Pos,Old_Battery_Level,New_level),
 	{keep_state,Data#sensor{battery_level = New_level}};
 sleep(cast, power_off, #sensor{main = Main_PC, position = Sensor_Pos} = Data) ->
-	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,inactive}]),
+	ets:insert(graphic_sensor,{Sensor_Pos,inactive}),
 	{next_state,dead,Data};
 sleep(info, {'EXIT',_PID,_Reason}, _Data) ->
 	keep_state_and_data;
@@ -162,13 +162,13 @@ awake({call,From}, gotoSleep, #sensor{main = Main_PC, position = Sensor_Pos, nei
 						_ -> not_sent
 					end,
 	ets:insert(data_base, {Sensor_Pos,{sleep,NhbrList,Data#sensor.compared_P,Data#sensor.battery_level,New_Data_List}}),
-	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,asleep}]),
+	ets:insert(graphic_sensor,{Sensor_Pos,asleep}),
 	{next_state,sleep,Data#sensor{data_list = New_Data_List},[{reply,From,Reply}]};
 awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #sensor{main = Main_PC, data_list = Data_List} = Data) ->
-	rpc:call(Main_PC,graphic,update_sensor,[{From_SensorInPos,sending}]),
+	ets:insert(graphic_sensor,{From_SensorInPos,sending}),
 	timer:sleep(900),	%for graphic purposes
 	New_Data_List = Data_List ++ Rec_Data_List,
-	rpc:call(Main_PC,graphic,update_sensor,[{From_SensorInPos,active}]),
+	ets:insert(graphic_sensor,{From_SensorInPos,active}),
 	timer:sleep(300),		%for graphic purposes
 	{keep_state,Data#sensor{data_list = New_Data_List},[{reply,From,sent}]};
 awake(cast, {set_battery,New_level}, #sensor{main = Main_PC, position = Sensor_Pos, battery_level = Old_Battery_Level} = Data) ->
@@ -176,7 +176,7 @@ awake(cast, {set_battery,New_level}, #sensor{main = Main_PC, position = Sensor_P
 	update_batery_img(Main_PC,Sensor_Pos,Old_Battery_Level,New_level),
 	{keep_state,Data#sensor{battery_level = New_level}};
 awake(cast, power_off, #sensor{main = Main_PC, position = Sensor_Pos} = Data) ->
-	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,inactive}]),
+	ets:insert(graphic_sensor,{Sensor_Pos,inactive}),
 	{next_state,dead,Data};
 awake(info, {'EXIT',_PID,_Reason}, _Data) ->
 	keep_state_and_data;
@@ -260,11 +260,11 @@ update_batery_img(Main_PC, Sensor_Pos,Old_Battery_Level0,New_Battery_Level0) ->
 	New_Battery_Level = trunc(New_Battery_Level0/20) * 20,
 	case Old_Battery_Level /= New_Battery_Level of
 		true ->
-			rpc:call(Main_PC,graphic,update_battery,[{Sensor_Pos,New_Battery_Level}]);
+			ets:insert(graphic_battery,{Sensor_Pos,New_Battery_Level});
 		false ->
 			case (Old_Battery_Level > 15) and (New_Battery_Level =< 15) of
 				true ->
-					rpc:call(Main_PC,graphic,update_battery,[{Sensor_Pos,low_battery}]);
+					ets:insert(graphic_battery,{Sensor_Pos,low_battery});
 				false -> ok
 			end
 	end.
