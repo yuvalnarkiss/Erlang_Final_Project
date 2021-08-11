@@ -124,7 +124,7 @@ sleep({call,From}, randomize_P, #sensor{main = Main_PC, position = Sensor_Pos, c
 														 true ->
 															 rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,active}]),
 															 Data_map = monitor_data(Sensor_Pos),
-															 server:updateETS(Sensor_Pos,{awake,Data#sensor.neighbors,P_comp,Data#sensor.battery_level,Data_List ++ [Data_map]}),
+															 ets:insert(data_base, {Sensor_Pos,{awake,Data#sensor.neighbors,P_comp,Data#sensor.battery_level,Data_List ++ [Data_map]}}),
 															 {awake, Data#sensor{data_list = Data_List ++ [Data_map]}};
 														 false ->
 															 {sleep, Data}
@@ -133,7 +133,7 @@ sleep({call,From}, randomize_P, #sensor{main = Main_PC, position = Sensor_Pos, c
 sleep({call,From}, {forward,_Data_List}, _Data) ->
 	{keep_state_and_data,[{reply,From,abort}]};	%another sensor tried to send data to this sensor while in sleep mode - data not received
 sleep(cast, {set_battery,New_level}, #sensor{main = Main_PC, position = Sensor_Pos, battery_level = Old_Battery_Level} = Data) ->
-	server:updateETS(Data#sensor.position,{sleep,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list}),
+	ets:insert(data_base, {Data#sensor.position,{sleep,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list}}),
 	update_batery_img(Main_PC,Sensor_Pos,Old_Battery_Level,New_level),
 	{keep_state,Data#sensor{battery_level = New_level}};
 sleep(cast, power_off, #sensor{main = Main_PC, position = Sensor_Pos} = Data) ->
@@ -147,7 +147,7 @@ awake({call,From}, gotoSleep, #sensor{main = Main_PC, nodes = PC_List, position 
 						[] -> sent;
 						_ -> not_sent
 					end,
-	server:updateETS(Sensor_Pos,{sleep,NhbrList,Data#sensor.compared_P,Data#sensor.battery_level,New_Data_List}),
+	ets:insert(data_base, {Sensor_Pos,{sleep,NhbrList,Data#sensor.compared_P,Data#sensor.battery_level,New_Data_List}}),
 	rpc:call(Main_PC,graphic,update_sensor,[{Sensor_Pos,asleep}]),
 	{next_state,sleep,Data#sensor{data_list = New_Data_List},[{reply,From,Reply}]};
 awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #sensor{main = Main_PC, data_list = Data_List} = Data) ->
@@ -158,7 +158,7 @@ awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #sensor{main = Ma
 	timer:sleep(300),		%for graphic purposes
 	{keep_state,Data#sensor{data_list = New_Data_List},[{reply,From,sent}]};
 awake(cast, {set_battery,New_level}, #sensor{main = Main_PC, position = Sensor_Pos, battery_level = Old_Battery_Level} = Data) ->
-	server:updateETS(Data#sensor.position,{awake,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list}),
+	ets:insert(data_base, {Data#sensor.position,{awake,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list}}),
 	update_batery_img(Main_PC,Sensor_Pos,Old_Battery_Level,New_level),
 	{keep_state,Data#sensor{battery_level = New_level}};
 awake(cast, power_off, #sensor{main = Main_PC, position = Sensor_Pos} = Data) ->
