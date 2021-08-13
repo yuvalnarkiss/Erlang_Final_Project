@@ -247,7 +247,7 @@ send_data_to_neighbor(Sensor_Pos,[{Neighbor_PID,Neighbor_POS}|NhbrList],Data_Lis
 	Self_Node = find_pc(Sensor_Pos),
 	Msg_status = case Node == Self_Node of
 		true ->  sensor:forward(Neighbor_PID,{Sensor_Pos,Data_List});
-		false -> rpc:call(Node,server,forward,[{Neighbor_PID,Sensor_Pos,Data_List}])
+		false -> rpc:call(Node,sensor,forward,[Neighbor_PID,{Sensor_Pos,Data_List}])
 	end,
 	New_Data_List = case Msg_status of
 										sent -> [];
@@ -279,8 +279,8 @@ neighbor_sort(Sensor_Pos,NhbrList) ->
 dist({X1,Y1},{X2,Y2}) -> trunc(math:ceil(math:sqrt(math:pow(X2 - X1, 2) + math:pow(Y2 - Y1, 2)))).
 
 update_batery_img(Sensor_Pos,Old_Battery_Level0,New_Battery_Level0) ->
-	Old_Battery_Level = math:ceil(Old_Battery_Level0/20) * 20,
-	New_Battery_Level = math:ceil(New_Battery_Level0/20) * 20,
+	Old_Battery_Level = trunc(math:ceil(Old_Battery_Level0/20) * 20),
+	New_Battery_Level = trunc(math:ceil(New_Battery_Level0/20) * 20),
 	case Old_Battery_Level /= New_Battery_Level of
 		true ->
 			ets:insert(graphic_battery,{Sensor_Pos,New_Battery_Level});

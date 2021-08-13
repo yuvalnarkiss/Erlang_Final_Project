@@ -220,7 +220,7 @@ drawTEXT(Painter,Key) ->
     '$end_of_table' -> ok;
     self_temp ->
       [{_Key,SelfTemp}] = ets:lookup(status_db,Key),
-      wxDC:drawText(Painter,io_lib:format("~.3f",[SelfTemp]) ++ "    Celcius",{1250,765}),
+      wxDC:drawText(Painter,io_lib:format("~.3f",[SelfTemp]) ++ "  Celcius",{1250,765}),
       drawTEXT(Painter,ets:next(status_db,Key));
     Key ->
       [{_Key,{TempAVG,HumidityAVG}}] = ets:lookup(status_db,Key),
@@ -231,7 +231,7 @@ drawTEXT(Painter,Key) ->
                       q3 -> {{1250,489},{1250,530}};
                       q4 -> {{1250,627},{1250,668}}
                     end,
-      wxDC:drawText(Painter,io_lib:format("~.3f",[TempAVG]) ++ "    Celcius",Pos1),
+      wxDC:drawText(Painter,io_lib:format("~.3f",[TempAVG]) ++ "  Celcius",Pos1),
       wxDC:drawText(Painter,io_lib:format("~.3f",[HumidityAVG]) ++ "%",Pos2),
       drawTEXT(Painter,ets:next(status_db,Key))
   end.

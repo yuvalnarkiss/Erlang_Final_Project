@@ -172,6 +172,8 @@ handle_info(_Request, State) ->
   {noreply, State}.
 
 terminate(_Reason, _State) ->
+  Connected_PCs = nodes(),
+  [rpc:call(PC,server,shutdown,[]) || PC <- Connected_PCs ],
   ets:delete(ulQuarter),ets:delete(urQuarter),ets:delete(dlQuarter),ets:delete(drQuarter),
   ets:delete(pc1Backup),ets:delete(pc2Backup),ets:delete(pc3Backup),ets:delete(pc4Backup),
   ok.

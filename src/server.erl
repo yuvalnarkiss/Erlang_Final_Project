@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/3, mergeETS/1, forward/1]).
+-export([start_link/3, mergeETS/1, shutdown/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -35,8 +35,10 @@ start_link(MainPC_Node,PC_list,Which_PC) ->
 mergeETS(ETS_old_list) ->
   gen_server:cast(?SERVER, {merge_ets, ETS_old_list}).
 
-forward(Data) ->
-  gen_server:call(?SERVER, {forward, Data}).
+shutdown()->
+  gen_server:stop(?MODULE).
+%forward(Data) ->
+%  gen_server:call(?SERVER, {forward, Data}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -78,9 +80,9 @@ init({MainPC_Node,[PC1,PC2,PC3,PC4],Which_PC}) ->
   {noreply, NewState :: #server_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #server_state{}} |
   {stop, Reason :: term(), NewState :: #server_state{}}).
-handle_call({forward, {Dest_PID,Src_Pos,Data_List}}, _From, State) ->
-  Stat = sensor:forward(Dest_PID,{Src_Pos,Data_List}),
-  {reply, Stat, State};
+%handle_call({forward, {Dest_PID,Src_Pos,Data_List}}, _From, State) ->
+%  Stat = sensor:forward(Dest_PID,{Src_Pos,Data_List}),
+%  {reply, Stat, State};
 handle_call(_Request, _From, State = #server_state{}) ->
   {reply, ok, State}.
 
