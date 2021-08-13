@@ -11,6 +11,10 @@
 
 -behaviour(wx_object).
 -include_lib("wx/include/wx.hrl").
+-include("params.hrl").
+
+-define(SCREEN_SIZE,{1400, 900}).
+-define(INIT_VAL,{0.0,0.0}).
 
 %% API
 -export([start/0, update_sensor_ets/1, update_battery_ets/1,update_status/2]).
@@ -56,12 +60,14 @@ init([]) ->
   ets:new(screen_db,[set,public,named_table]),
   ets:new(btry_db,[set,public,named_table]),
   ets:new(status_db,[set,public,named_table]),
-  ets:insert(status_db,[{q1,{0.0,0.0}},{q3,{0.0,0.0}},{q2,{0.0,0.0}},{q4,{0.0,0.0}},{whole,{0.0,0.0}}]),
+  % Initialize Values
+  ets:insert(status_db,[{q1,?INIT_VAL},{q3,?INIT_VAL},{q2,?INIT_VAL},{q4,?INIT_VAL},{whole,?INIT_VAL},{self_temp,0.0}]),
+
   %Graphics
   WxServer = wx:new(),
-  Frame = wxFrame:new(WxServer, ?wxID_ANY, "MAP", [{size,{1400, 900}}]),
+  Frame = wxFrame:new(WxServer, ?wxID_ANY, "MAP", [{size,?SCREEN_SIZE}]),
   Panel  = wxPanel:new(Frame),
-  %wxFrame:createStatusBar(Frame), - in case we'll need
+
   wxFrame:show(Frame),
   CallBackPaint =	fun(#wx{event = #wxPaint{}}, _wxObj)->
     Paint = wxBufferedPaintDC:new(Panel),
@@ -118,8 +124,11 @@ handle_cast({update_sensor_ets, Graphic_ets_list}, State) ->
   ets:insert(screen_db,Draw_List),
   {noreply, State};
 handle_cast({update_battery_ets, Graphic_ets_list}, State) ->
-  Draw_List = [{Battery_Pos,b_state_to_img(Battery_State,Battery_Pos)} || {Battery_Pos,Battery_State} <- Graphic_ets_list],
+  Draw_List = [{Battery_Pos,b_state_to_img(Battery_State)} || {Battery_Pos,Battery_State} <- Graphic_ets_list, Battery_State /= 0],
   ets:insert(btry_db,Draw_List),
+
+  %delete images with 0 battery
+  [ ets:delete(btry_db,Battery_Pos) || {Battery_Pos,Battery_State} <- Graphic_ets_list, Battery_State == 0],
   {noreply, State};
 handle_cast({update_stat, {Quarter,Data}}, State) ->
   ets:insert(status_db,{Quarter,Data}), %{TempAVG,SelfTempAVG,HumidityAVG}
@@ -134,7 +143,7 @@ handle_cast(_Request, State = #main_PC_state{}) ->
   {noreply, NewState :: #main_PC_state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #main_PC_state{}}).
 handle_info(_Info, State = #main_PC_state{ panel = Panel }) ->
-  wxWindow:refresh(Panel,[{eraseBackground,false}]),{noreply, State},
+  wxWindow:refresh(Panel,[{eraseBackground,false}]),
   {noreply, State}.
 
 handle_event(#wx{event = #wxMouse{type=left_down, x=X0, y=Y0}},State) -> % when the right click was pressed, activate a function that returns the color of the light that was pressed
@@ -145,17 +154,18 @@ handle_event(#wx{event = #wxMouse{type=left_down, x=X0, y=Y0}},State) -> % when 
     [] -> ok;
     [{_Battery_Pos,BatteryIMG}] ->
       ets:insert(screen_db,{battery,{{X-5,Y-20},BatteryIMG}}),
-      timer:apply_after(1000,ets,delete,[screen_db, battery])
+      timer:apply_after(1000,ets,delete,[screen_db, battery])   % show for 1 sec
   end,
   {noreply,State};
 
-handle_event(#wx{event = #wxClose{}},State = #main_PC_state {frame = Frame}) -> % close window event
+handle_event(#wx{event = #wxClose{}},State = #main_PC_state {frame = Frame, panel = Panel}) -> % close window event
   io:format("Exiting\n"),
+  wxPanel:destrpy(Panel),
   wxWindow:destroy(Frame),
   wx:destroy(),
   {stop,normal,State};
 
-handle_event(_Event,State) -> % when left click has been pressed, activate navigation function
+handle_event(_Event,State) ->
   {noreply,State}.
 
 
@@ -167,6 +177,7 @@ handle_event(_Event,State) -> % when left click has been pressed, activate navig
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #main_PC_state{}) -> term()).
 terminate(_Reason, _State = #main_PC_state{}) ->
+  ets:delete(screen_db), ets:delete(btry_db), ets:delete(status_db),
   ok.
 
 %% @private
@@ -233,15 +244,12 @@ state_to_img(State) ->
     inactive -> "sensor_inactive.bmp"
   end.
 
-b_state_to_img(State,Pos) ->
+b_state_to_img(State) ->
   case State of
-    0 -> ets:delete(btry_db,Pos);
-    _ -> case State of
-           low_battery -> "battery_15.bmp";
-           20 -> "battery_20.bmp";
-           40 -> "battery_40.bmp";
-           60 -> "battery_60.bmp";
-           80 -> "battery_80.bmp";
-           100 -> "battery_100.bmp"
-         end
+    low_battery -> "battery_15.bmp";
+    20 -> "battery_20.bmp";
+    40 -> "battery_40.bmp";
+    60 -> "battery_60.bmp";
+    80 -> "battery_80.bmp";
+    100 -> "battery_100.bmp"
   end.

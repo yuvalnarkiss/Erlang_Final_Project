@@ -120,6 +120,7 @@ handle_info(_Info, State = #server_state{}) ->
 terminate(_Reason, _State = #server_state{}) ->
   Sensors = registered(),
   [sensor:sensor_down(Sensor_Name) || Sensor_Name <- Sensors],
+  ets:delete(data_base), ets:delete(graphic_sensor), ets:delete(graphic_battery),
   ok.
 
 %% @private

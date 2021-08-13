@@ -18,11 +18,12 @@ start_loop() ->
   register(stationary_comp,self()),
   start_loop([]).
 
+% when gained data enough data, send all to main_PC
 start_loop(Data) when length(Data) >= ?DATA_LIMIT ->
   main_PC:transfer_data(Data),
   start_loop([]);
 start_loop(Data) ->
   receive
-    {data,New_Data} -> start_loop( New_Data ++ Data );
+    {data,New_Data} -> start_loop( New_Data ++ Data );    % gain data
     stop -> ok
   end.

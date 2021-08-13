@@ -9,10 +9,12 @@
 -module(battery).
 -author("ubuntu").
 
+-include("params.hrl").
+
 -export([start_battery/1,start_battery/3]).
 
 start_battery(Name) ->
-	put(baterry_lvl,100),
+	put(baterry_lvl,?FULL_BATTERY),
 	batteryMode(100.0,sleep,Name).
 
 start_battery(Name,State,Battery_level) ->
@@ -23,7 +25,7 @@ batteryMode(Battery_lvl,_,Sensor_ID) when Battery_lvl =< 0 ->
 	%Battery: Battery level 0% Power Off
 	sensor:power_off(Sensor_ID);
 batteryMode(Battery_lvl,awake,Sensor_ID) ->
-	New_Battery_lvl = battery_activity(Sensor_ID,Battery_lvl,100,6),				%awake for 3 s before sendig data and going back to sleep
+	New_Battery_lvl = battery_activity(Sensor_ID,Battery_lvl,100,6),				%awake for 0.6 s before sendig data and going back to sleep
 	Sending_stat = sensor:gotoSleep(Sensor_ID),
 	Penalty = case Sending_stat of
 							sent -> 0.5;
@@ -32,7 +34,7 @@ batteryMode(Battery_lvl,awake,Sensor_ID) ->
 	batteryMode(New_Battery_lvl - Penalty,sleep,Sensor_ID);
 
 batteryMode(Battery_lvl,sleep,Sensor_ID) ->
-	New_Battery_lvl = battery_activity(Sensor_ID,Battery_lvl,600,1),				%sleep for 3 s before randomizing P
+	New_Battery_lvl = battery_activity(Sensor_ID,Battery_lvl,600,1),				%sleep for 0.6 s before randomizing P
 	%Battery: call sensor with request 'randomize_P'
 	Next_state = sensor:randomize_P(Sensor_ID),
 	case Next_state of

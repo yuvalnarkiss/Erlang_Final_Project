@@ -1,15 +1,7 @@
 -module('main_PC').
 -behaviour(gen_server).
-%-include("params.hrl").
+-include("params.hrl").
 
--define(ULQXBOUNDARY, 480).
--define(ULQYBOUNDARY, 440).
--define(URQXBOUNDARY, 460).
--define(URQYBOUNDARY, 440).
--define(DLQXBOUNDARY, 480).
--define(DLQYBOUNDARY, 420).
--define(DRQXBOUNDARY, 460).
--define(DRQYBOUNDARY, 420).
 % ============ Exports ===========
 -export([init/1,start_link/4,handle_call/3,handle_cast/2,handle_info/2,terminate/2,transfer_data/1,getETSdata/1,shutdown/0,periodic_sensor_status_update/2]).
 
@@ -116,7 +108,7 @@ handle_call(example, _From, State) ->
 handle_info({sens_list,ReceivedSensorList}, #state{nodes = Node_list, info_count = Count, sensor_pos_list = SensorList} = State) ->
   case Count+1 of
     4 ->
-      FullSensorList =	[{spawn(stationary_comp, start_loop,[]),{940,0}}] ++ SensorList ++ ReceivedSensorList,
+      FullSensorList =	[{spawn(stationary_comp, start_loop,[]),?STATIONARY_COMP_POS}] ++ SensorList ++ ReceivedSensorList,
       Pos_List = [POS|| {_PID,POS} <- FullSensorList],
       create_quarter_positions_list(Pos_List),
       Radius = hd(find_radius(Pos_List)),
