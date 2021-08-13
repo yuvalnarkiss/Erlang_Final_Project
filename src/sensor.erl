@@ -89,7 +89,9 @@ init({recover,Sensor_Pos,Sensor_Name,Sensor_Data,Main_PC}) ->
 	spawn_link(battery,start_battery,[Sensor_Name,State,Battery_level]),
 	Graphic_State = case State of
 										sleep -> asleep;
-										awake -> active
+										awake -> active;
+										dead -> inactive;
+										_ -> active
 									end,
 	ets:insert(graphic_sensor,{Sensor_Pos,Graphic_State}),
 	update_batery_img(Sensor_Pos,?FULL_BATTERY,Battery_level),
