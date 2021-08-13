@@ -160,7 +160,7 @@ handle_event(#wx{event = #wxMouse{type=left_down, x=X0, y=Y0}},State) -> % when 
 
 handle_event(#wx{event = #wxClose{}},State = #main_PC_state {frame = Frame, panel = Panel}) -> % close window event
   io:format("Exiting\n"),
-  wxPanel:destrpy(Panel),
+  wxPanel:destroy(Panel),
   wxWindow:destroy(Frame),
   wx:destroy(),
   {stop,normal,State};
