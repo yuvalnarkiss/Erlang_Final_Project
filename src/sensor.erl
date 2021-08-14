@@ -162,7 +162,8 @@ sleep(cast, {set_battery,New_level}, #sensor{position = Sensor_Pos, battery_leve
 	{keep_state,Data#sensor{battery_level = New_level}};
 sleep(cast, power_off, #sensor{position = Sensor_Pos} = Data) ->
 	ets:insert(graphic_sensor,{Sensor_Pos,inactive}),
-	{next_state,dead,Data};
+	ets:insert(data_base, {Sensor_Pos,{dead,[],Data#sensor.compared_P,0,[]}}),
+	{next_state,dead,Data#sensor{ neighbors = [], data_list = [], battery_level =0}};
 
 % Ignore other messages
 sleep({call,From}, {forward,_Data_List}, _Data) ->
@@ -184,11 +185,13 @@ awake({call,From}, gotoSleep, #sensor{main = Main_PC, position = Sensor_Pos, nei
 	ets:insert(data_base, {Sensor_Pos,{sleep,NhbrList,Data#sensor.compared_P,Data#sensor.battery_level,New_Data_List}}),
 	ets:insert(graphic_sensor,{Sensor_Pos,asleep}),
 	{next_state,sleep,Data#sensor{data_list = New_Data_List},[{reply,From,Reply}]};
-awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #sensor{data_list = Data_List} = Data) ->
+awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #sensor{position = Pos, data_list = Data_List} = Data) ->
+	ets:insert(graphic_sensor,{Pos,sending}),
 	ets:insert(graphic_sensor,{From_SensorInPos,sending}),
 	timer:sleep(?BLUE_LIGHT),	%for graphic purposes
 	New_Data_List = Data_List ++ Rec_Data_List,
-	ets:insert(graphic_sensor,{From_SensorInPos,active}),
+	ets:insert(graphic_sensor,{Pos,active}),
+	ets:delete(graphic_sensor,From_SensorInPos),
 	timer:sleep(?TURN_OFF_BLUE_LIGHT),		%for graphic purposes
 	{keep_state,Data#sensor{data_list = New_Data_List},[{reply,From,sent}]};
 awake(cast, {set_battery,New_level}, #sensor{position = Sensor_Pos, battery_level = Old_Battery_Level} = Data) ->
@@ -197,7 +200,8 @@ awake(cast, {set_battery,New_level}, #sensor{position = Sensor_Pos, battery_leve
 	{keep_state,Data#sensor{battery_level = New_level}};
 awake(cast, power_off, #sensor{position = Sensor_Pos} = Data) ->
 	ets:insert(graphic_sensor,{Sensor_Pos,inactive}),
-	{next_state,dead,Data};
+	ets:insert(data_base, {Sensor_Pos,{dead,[],Data#sensor.compared_P,0,[]}}),
+	{next_state,dead,Data#sensor{ neighbors = [], data_list = [], battery_level = 0}};
 
 % ignore other messages
 awake(info, {'EXIT',_PID,_Reason}, _Data) ->
