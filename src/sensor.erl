@@ -149,7 +149,7 @@ sleep({call,From}, randomize_P, #sensor{position = Sensor_Pos, compared_P = P_co
 	{Next_State, New_Data} = case P > P_comp of
 														 true ->
 															 ets:insert(graphic_sensor,{Sensor_Pos,active}),
-															 Data_map = maps:merge(monitor_data(Sensor_Pos), #{message_count = MSG_Count, battery = Battery_level}),
+															 Data_map = maps:merge(monitor_data(Sensor_Pos), #{message_count => MSG_Count, battery => Battery_level}),
 															 ets:insert(data_base, {Sensor_Pos,{awake,Data#sensor.neighbors,P_comp,Data#sensor.battery_level,Data_List ++ [Data_map],MSG_Count}}),
 															 {awake, Data#sensor{data_list = Data_List ++ [Data_map]}};
 														 false ->
