@@ -300,8 +300,8 @@ update_batery_img(Sensor_Pos,Old_Battery_Level0,New_Battery_Level0) ->
 
 find_pc(Sensor_Pos) ->
 	case Sensor_Pos of
-		{X,Y} when X < ?ULQXBOUNDARY , Y < ?ULQYBOUNDARY -> ets:lookup_element(nodes,pc1,2);
-		{X,Y} when X > ?URQXBOUNDARY , Y < ?URQYBOUNDARY -> ets:lookup_element(nodes,pc2,2);
-		{X,Y} when X < ?DLQXBOUNDARY , Y > ?DLQYBOUNDARY -> ets:lookup_element(nodes,pc3,2);
-		{X,Y} when X > ?DRQXBOUNDARY , Y > ?DRQYBOUNDARY -> ets:lookup_element(nodes,pc4,2)
+		{X,Y} when X =< ?AREA_WIDTH_METER/2 , Y =< ?AREA_HEIGHT_METER/2 -> ets:lookup_element(nodes,pc1,2);
+		{X,Y} when X >= ?AREA_WIDTH_METER/2 , Y =< ?AREA_HEIGHT_METER/2 -> ets:lookup_element(nodes,pc2,2);
+		{X,Y} when X =< ?AREA_WIDTH_METER/2 , Y >= ?AREA_HEIGHT_METER/2 -> ets:lookup_element(nodes,pc3,2);
+		{X,Y} when X >= ?AREA_WIDTH_METER/2 , Y >= ?AREA_HEIGHT_METER/2 -> ets:lookup_element(nodes,pc4,2)
 	end.
