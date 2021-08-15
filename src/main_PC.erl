@@ -78,19 +78,24 @@ init([PC1,PC2,PC3,PC4]) ->
 handle_cast({transfer_data,ListOfDatas},State) ->
   [update_sensor_data(Map,map)||  Map <-ListOfDatas],
   %{TempAVG,SelfTempAVG,HumidityAVG};
-  {ULTempAVG,ULSelfTempAVG,ULHumidityAVG} = quarter_cumulative_averages(ulQuarter,lists:flatten(ets:match(positionsByQuarter,{ulQuarter,'$1'})),100),
-  {URTempAVG,URSelfTempAVG,URHumidityAVG} = quarter_cumulative_averages(urQuarter,lists:flatten(ets:match(positionsByQuarter,{urQuarter,'$1'})),100),
-  {DLTempAVG,DLSelfTempAVG,DLHumidityAVG} = quarter_cumulative_averages(dlQuarter,lists:flatten(ets:match(positionsByQuarter,{dlQuarter,'$1'})),100),
-  {DRTempAVG,DRSelfTempAVG,DRHumidityAVG} = quarter_cumulative_averages(drQuarter,lists:flatten(ets:match(positionsByQuarter,{drQuarter,'$1'})),100),
+  {ULTempAVG,ULSelfTempAVG,ULHumidityAVG,{ULBatteryAVG,ULBatterySTD},{ULMsgCountAVG,ULMsgCountSTD}} = quarter_cumulative_averages(ulQuarter,lists:flatten(ets:match(positionsByQuarter,{ulQuarter,'$1'})),100),
+  {URTempAVG,URSelfTempAVG,URHumidityAVG,{URBatteryAVG,URBatterySTD},{URMsgCountAVG,URMsgCountSTD}} = quarter_cumulative_averages(urQuarter,lists:flatten(ets:match(positionsByQuarter,{urQuarter,'$1'})),100),
+  {DLTempAVG,DLSelfTempAVG,DLHumidityAVG,{DLBatteryAVG,DLBatterySTD},{DLMsgCountAVG,DLMsgCountSTD}} = quarter_cumulative_averages(dlQuarter,lists:flatten(ets:match(positionsByQuarter,{dlQuarter,'$1'})),100),
+  {DRTempAVG,DRSelfTempAVG,DRHumidityAVG,{DRBatteryAVG,DRBatterySTD},{DRMsgCountAVG,DRMsgCountSTD}} = quarter_cumulative_averages(drQuarter,lists:flatten(ets:match(positionsByQuarter,{drQuarter,'$1'})),100),
   WholeTempAVG = (ULTempAVG+URTempAVG+DLTempAVG+DRTempAVG)/4,
   WholeSelfTempAVG = (ULSelfTempAVG+URSelfTempAVG+DLSelfTempAVG+DRSelfTempAVG)/4,
   WholeHumidityAVG = (ULHumidityAVG+URHumidityAVG+DLHumidityAVG+DRHumidityAVG)/4,
+  WholeBatteryAVG = (ULBatteryAVG+URBatteryAVG+DLBatteryAVG+DRBatteryAVG)/4,
+  WholeBatterySTD = (ULBatterySTD+URBatterySTD+DLBatterySTD+DRBatterySTD)/4,
+  WholeMsgCountAVG = (ULMsgCountAVG+URMsgCountAVG+DLMsgCountAVG+DRMsgCountAVG)/4,
+  WholeMsgCountSTD = (ULMsgCountSTD+URMsgCountSTD+DLMsgCountSTD+DRMsgCountSTD)/4,
   graphic:update_status(self_temp,WholeSelfTempAVG), %in graphics, this information will be updated in the status_db ets. key is self_temp, value is WholeSelfTempAVG
   graphic:update_status(q1,{ULTempAVG,ULHumidityAVG}),%in graphics, this information will be updated in the status_db ets. key is ulQuarter, value is the tuple {ULTempAVG,ULHumidityAVG}.
   graphic:update_status(q2,{URTempAVG,URHumidityAVG}), %Likewise.
   graphic:update_status(q3,{DLTempAVG,DLHumidityAVG}),%Likewise.
   graphic:update_status(q4,{DRTempAVG,DRHumidityAVG}),%Likewise.
   graphic:update_status(whole,{WholeTempAVG,WholeHumidityAVG}),%Likewise.
+  graphic:update_status(stat_avg,{WholeBatteryAVG,WholeBatterySTD,WholeMsgCountAVG,WholeMsgCountSTD}),
   %update graphic for each quarter
   {noreply,State};
 
@@ -191,12 +196,20 @@ find_radius([{X1,Y1}| Pos_list]) ->
 
 dist({X1,Y1},{X2,Y2}) -> trunc(math:ceil(math:sqrt(math:pow(X2 - X1, 2) + math:pow(Y2 - Y1, 2)))).
 
+%find_quarter(Sensor_Pos) ->
+%  case Sensor_Pos of
+%    {X,Y} when X < ?ULQXBOUNDARY , Y < ?ULQYBOUNDARY -> ulQuarter;
+%    {X,Y} when X > ?URQXBOUNDARY , Y < ?URQYBOUNDARY -> urQuarter;
+%    {X,Y} when X < ?DLQXBOUNDARY , Y > ?DLQYBOUNDARY -> dlQuarter;
+%    {X,Y} when X > ?DRQXBOUNDARY , Y > ?DRQYBOUNDARY -> drQuarter
+%  end.
+
 find_quarter(Sensor_Pos) ->
   case Sensor_Pos of
-    {X,Y} when X < ?ULQXBOUNDARY , Y < ?ULQYBOUNDARY -> ulQuarter;
-    {X,Y} when X > ?URQXBOUNDARY , Y < ?URQYBOUNDARY -> urQuarter;
-    {X,Y} when X < ?DLQXBOUNDARY , Y > ?DLQYBOUNDARY -> dlQuarter;
-    {X,Y} when X > ?DRQXBOUNDARY , Y > ?DRQYBOUNDARY -> drQuarter
+    {X,Y} when X =< ?AREA_WIDTH_METER/2 , Y =< ?AREA_HEIGHT_METER/2 -> ulQuarter;
+    {X,Y} when X >= ?AREA_WIDTH_METER/2 , Y =< ?AREA_HEIGHT_METER/2 -> urQuarter;
+    {X,Y} when X =< ?AREA_WIDTH_METER/2 , Y >= ?AREA_HEIGHT_METER/2 -> dlQuarter;
+    {X,Y} when X >= ?AREA_WIDTH_METER/2 , Y >= ?AREA_HEIGHT_METER/2 -> drQuarter
   end.
 
 update_sensor_data(Map,map) ->
@@ -260,8 +273,10 @@ accumulated_stat_of_sensor(ElemList,CurrTime,TimeFilter) ->
   TempAVG = avg_calc(TempETS,temp),
   SelfTempAVG = avg_calc(TempETS,self_temp),
   HumidityAVG = avg_calc(TempETS,humidity),
+  BatteryAVG = avg_calc(TempETS,battery),
+  MsgCountAVG = avg_calc(TempETS,message_count),
   ets:delete(TempETS),
-  {TempAVG,SelfTempAVG,HumidityAVG}.
+  {TempAVG,SelfTempAVG,HumidityAVG,BatteryAVG,MsgCountAVG}.
 
 
 insert_map_to_tempETS(none,_,_,_) -> none;
