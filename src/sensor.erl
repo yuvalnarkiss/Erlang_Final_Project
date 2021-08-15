@@ -31,7 +31,7 @@
 -export([init/1, format_status/2, idle/3, sleep/3, awake/3, dead/3, handle_event/4, terminate/3,
 	code_change/4, callback_mode/0]).
 
--record(sensor, {main,name,position,compared_P,neighbors,battery_level,data_list}).
+-record(sensor, {main,name,position,compared_P,neighbors,battery_level,data_list,msg_count}).
 
 -define(SERVER, ?MODULE).
 
@@ -84,8 +84,8 @@ sensor_down(Sensor_Name) ->
 %% process to initialize.
 init({recover,Sensor_Pos,Sensor_Name,Sensor_Data,Main_PC}) ->
 	process_flag(trap_exit,true),		%trap node_down
-	{State,Neighbors,P_comp,Battery_level,Data_list} = Sensor_Data,
-	Data = #sensor{main = Main_PC, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = Neighbors, battery_level = Battery_level, data_list = Data_list},
+	{State,Neighbors,P_comp,Battery_level,Data_list,MSG_CNT} = Sensor_Data,
+	Data = #sensor{main = Main_PC, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = Neighbors, battery_level = Battery_level, data_list = Data_list, msg_count = MSG_CNT},
 	spawn_link(battery,start_battery,[Sensor_Name,State,Battery_level]),
 	Graphic_State = case State of
 										sleep -> asleep;
@@ -99,7 +99,7 @@ init({recover,Sensor_Pos,Sensor_Name,Sensor_Data,Main_PC}) ->
 init({Sensor_Pos,Sensor_Name,Main_PC}) ->
 	process_flag(trap_exit,true),		%trap node_down
 	P_comp = rand:uniform(4) + (?SLEEP_PROBABILITY - 4),  % percentage of sleep time randomize between 95%-98%
-	Data = #sensor{main = Main_PC, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = [], battery_level = ?FULL_BATTERY, data_list = []},
+	Data = #sensor{main = Main_PC, name = Sensor_Name, position = Sensor_Pos, compared_P = P_comp, neighbors = [], battery_level = ?FULL_BATTERY, data_list = [], msg_count = 0},
 	{ok, idle, Data}.
 
 %% @private
@@ -144,25 +144,25 @@ idle(info, _Info, _Data) ->
 %--------------------------------------------------
 %							SLEEP STATE
 %-------------------------------------------------
-sleep({call,From}, randomize_P, #sensor{position = Sensor_Pos, compared_P = P_comp, data_list = Data_List} = Data) ->
+sleep({call,From}, randomize_P, #sensor{position = Sensor_Pos, compared_P = P_comp, data_list = Data_List, msg_count = MSG_Count, battery_level = Battery_level} = Data) ->
 	P = rand:uniform(100),  % uniformly randomized floating number between 1 - 100
 	{Next_State, New_Data} = case P > P_comp of
 														 true ->
 															 ets:insert(graphic_sensor,{Sensor_Pos,active}),
-															 Data_map = monitor_data(Sensor_Pos),
-															 ets:insert(data_base, {Sensor_Pos,{awake,Data#sensor.neighbors,P_comp,Data#sensor.battery_level,Data_List ++ [Data_map]}}),
+															 Data_map = maps:merge(monitor_data(Sensor_Pos), #{message_count = MSG_Count, battery = Battery_level}),
+															 ets:insert(data_base, {Sensor_Pos,{awake,Data#sensor.neighbors,P_comp,Data#sensor.battery_level,Data_List ++ [Data_map],MSG_Count}}),
 															 {awake, Data#sensor{data_list = Data_List ++ [Data_map]}};
 														 false ->
 															 {sleep, Data}
 													 end,
 	{next_state,Next_State,New_Data,[{reply,From,Next_State}]};
-sleep(cast, {set_battery,New_level}, #sensor{position = Sensor_Pos, battery_level = Old_Battery_Level} = Data) ->
-	ets:insert(data_base, {Data#sensor.position,{sleep,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list}}),
+sleep(cast, {set_battery,New_level}, #sensor{position = Sensor_Pos, battery_level = Old_Battery_Level, msg_count = MSG_Count} = Data) ->
+	ets:insert(data_base, {Data#sensor.position,{sleep,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list,MSG_Count}}),
 	update_batery_img(Sensor_Pos,Old_Battery_Level,New_level),
 	{keep_state,Data#sensor{battery_level = New_level}};
 sleep(cast, power_off, #sensor{position = Sensor_Pos} = Data) ->
 	ets:insert(graphic_sensor,{Sensor_Pos,inactive}),
-	ets:insert(data_base, {Sensor_Pos,{dead,[],Data#sensor.compared_P,0,[]}}),
+	ets:insert(data_base, {Sensor_Pos,{dead,[],Data#sensor.compared_P,0,[],0}}),
 	{next_state,dead,Data#sensor{ neighbors = [], data_list = [], battery_level =0}};
 
 % Ignore other messages
@@ -176,15 +176,15 @@ sleep(info, _Info, _Data) ->
 %--------------------------------------------------
 %							AWAKE STATE
 %-------------------------------------------------
-awake({call,From}, gotoSleep, #sensor{main = Main_PC, position = Sensor_Pos, neighbors = NhbrList, data_list = Data_List} = Data) ->
-	New_Data_List = send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,Main_PC),
-	Reply = case New_Data_List of
-						[] -> sent;
-						_ -> not_sent
+awake({call,From}, gotoSleep, #sensor{main = Main_PC, position = Sensor_Pos, neighbors = NhbrList, data_list = Data_List, msg_count = MSG_Count} = Data) ->
+	{New_Data_List, Msg_status} = send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,Main_PC),
+	{Reply, NEW_MSG_Count} = case Msg_status of
+						sent -> {sent, MSG_Count + 1};
+						_ -> {not_sent, MSG_Count}
 					end,
-	ets:insert(data_base, {Sensor_Pos,{sleep,NhbrList,Data#sensor.compared_P,Data#sensor.battery_level,New_Data_List}}),
+	ets:insert(data_base, {Sensor_Pos,{sleep,NhbrList,Data#sensor.compared_P,Data#sensor.battery_level,New_Data_List,NEW_MSG_Count}}),
 	ets:insert(graphic_sensor,{Sensor_Pos,asleep}),
-	{next_state,sleep,Data#sensor{data_list = New_Data_List},[{reply,From,Reply}]};
+	{next_state,sleep,Data#sensor{data_list = New_Data_List, msg_count = NEW_MSG_Count},[{reply,From,Reply}]};
 awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #sensor{position = Pos, data_list = Data_List} = Data) ->
 	ets:insert(graphic_sensor,{Pos,sending}),
 	ets:insert(graphic_sensor,{From_SensorInPos,sending}),
@@ -195,12 +195,12 @@ awake({call,From}, {forward,{From_SensorInPos,Rec_Data_List}}, #sensor{position 
 	timer:sleep(?TURN_OFF_BLUE_LIGHT),		%for graphic purposes
 	{keep_state,Data#sensor{data_list = New_Data_List},[{reply,From,sent}]};
 awake(cast, {set_battery,New_level}, #sensor{position = Sensor_Pos, battery_level = Old_Battery_Level} = Data) ->
-	ets:insert(data_base, {Data#sensor.position,{awake,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list}}),
+	ets:insert(data_base, {Data#sensor.position,{awake,Data#sensor.neighbors,Data#sensor.compared_P,New_level,Data#sensor.data_list,Data#sensor.msg_count}}),
 	update_batery_img(Sensor_Pos,Old_Battery_Level,New_level),
 	{keep_state,Data#sensor{battery_level = New_level}};
 awake(cast, power_off, #sensor{position = Sensor_Pos} = Data) ->
 	ets:insert(graphic_sensor,{Sensor_Pos,inactive}),
-	ets:insert(data_base, {Sensor_Pos,{dead,[],Data#sensor.compared_P,0,[]}}),
+	ets:insert(data_base, {Sensor_Pos,{dead,[],Data#sensor.compared_P,0,[],0}}),
 	{next_state,dead,Data#sensor{ neighbors = [], data_list = [], battery_level = 0}};
 
 % ignore other messages
@@ -245,9 +245,9 @@ code_change(_OldVsn, StateName, State = #sensor{}, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-send_data_to_neighbor(_Sensor_Pos,[],Data_List,_Tuple) -> Data_List;
+send_data_to_neighbor(_Sensor_Pos,[],Data_List,_Tuple) -> {Data_List, not_sent};
 send_data_to_neighbor(_Sensor_Pos,[{_Stationary_comp, ?STATIONARY_COMP_POS}|_NhbrList],Data_List,Main_PC) ->
-	{stationary_comp,Main_PC} ! {data,Data_List},[];
+	{stationary_comp,Main_PC} ! {data,Data_List}, {[], sent};
 send_data_to_neighbor(Sensor_Pos,[{Neighbor_PID,Neighbor_POS}|NhbrList],Data_List,Main_PC) ->
 	Node = find_pc(Neighbor_POS),
 	Self_Node = find_pc(Sensor_Pos),
@@ -262,7 +262,7 @@ send_data_to_neighbor(Sensor_Pos,[{Neighbor_PID,Neighbor_POS}|NhbrList],Data_Lis
 										{badrpc,_Reason} -> [];
 										stop -> []
 									end,
-	New_Data_List.
+	{New_Data_List, Msg_status}.
 
 monitor_data(Sensor_Pos) ->
 	Time = erlang:universaltime(),

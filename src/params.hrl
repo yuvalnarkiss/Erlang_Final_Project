@@ -8,7 +8,13 @@
 %%%-------------------------------------------------------------------
 -author("katrinn").
 
--define(STATIONARY_COMP_POS,{940,0}).
+-define(STATIONARY_COMP_POS,{1495,5}).
+-define(STATIONARY_COMP_X,1495).
+-define(STATIONARY_COMP_Y,5).
+-define(SCREEN_SIZE,{1024, 720}).
+-define(AREA_SIZE_METER,{1500, 1000}).
+-define(AREA_WIDTH_METER,1500).
+-define(AREA_HEIGHT_METER,1000).
 
 -define(ULQXBOUNDARY, 480).
 -define(ULQYBOUNDARY, 440).

@@ -10,6 +10,8 @@
 -author("katrinn").
 
 -behaviour(gen_server).
+-include("params.hrl").
+
 
 %% API
 -export([start_link/3, mergeETS/1, shutdown/0]).
@@ -53,15 +55,15 @@ init({MainPC_Node,[PC1,PC2,PC3,PC4],Which_PC}) ->
   io:format("server init ~n",[]),
   Offset = case Which_PC of
              pc1 -> {0,0};
-             pc2 -> {480,0};
-             pc3 -> {0,420};
-             pc4 -> {480,420}
+             pc2 -> {?AREA_WIDTH_METER/2,0};
+             pc3 -> {0,?AREA_HEIGHT_METER/2};
+             pc4 -> {?AREA_WIDTH_METER/2,?AREA_HEIGHT_METER/2}
            end,
   ets:new(nodes,[set,public,named_table]),
   ets:new(graphic_sensor,[set,public,named_table]),
   ets:new(graphic_battery,[set,public,named_table]),
   ets:new(data_base,[set,public,named_table]),
-  Num_of_sensors = rand:uniform(508) + 20, % number of sensors randomized between 20 - 576
+  Num_of_sensors = rand:uniform(100) + 400, % number of sensors randomized between 400-500
   Pos_list = randomize_positions(Num_of_sensors,Offset),
   Sensor_PID_Pos_list = create_sensors(MainPC_Node,Pos_list),
   {'main_PC',MainPC_Node} ! {sens_list,Sensor_PID_Pos_list},
@@ -145,12 +147,12 @@ randomize_positions(Pos_List,0,_Offset) ->
   Pos_Set = sets:from_list(Pos_List),
   sets:to_list(Pos_Set);
 randomize_positions(Pos_List,Num_of_sensors,{OffsetX,OffsetY} = Offset) ->
-  X = 20 * (rand:uniform(24) - 1) + OffsetX,
-  Y = 20 * (rand:uniform(22) - 1) + OffsetY,
+  X = (rand:uniform(?AREA_WIDTH_METER) - 1) + OffsetX,
+  Y = (rand:uniform(?AREA_HEIGHT_METER) - 1) + OffsetY,
   randomize_positions([{X,Y} | Pos_List],Num_of_sensors-1,Offset).
 
 create_sensors(_MainPC_Node,[]) -> [];
-create_sensors(MainPC_Node,[{X,Y}|Pos_list]) when ( X >= 920 ) and ( Y =< 60 ) -> create_sensors(MainPC_Node,Pos_list);   % Don't create sensor on the stationary_comp
+create_sensors(MainPC_Node,[{X,Y}|Pos_list]) when ( X >= ?STATIONARY_COMP_X ) and ( Y =< ?STATIONARY_COMP_Y ) -> create_sensors(MainPC_Node,Pos_list);   % Don't create sensor on the stationary_comp
 create_sensors(MainPC_Node,[Position|Pos_list]) ->
   {ok, Sensor_PID} = sensor:start_link(Position,MainPC_Node),
   [{Sensor_PID, Position} | create_sensors(MainPC_Node,Pos_list)].
