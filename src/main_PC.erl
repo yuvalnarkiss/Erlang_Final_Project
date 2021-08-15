@@ -225,8 +225,10 @@ quarter_cumulative_averages(Quarter,AllPosList,TimeFilter) ->
   TempAVG = avg_calc(TempETS,temp),
   SelfTempAVG = avg_calc(TempETS,self_temp),
   HumidityAVG = avg_calc(TempETS,humidity),
+  BatteryAVGandSTD = std_calc(TempETS,battery),
+  MsgCountAVGandSTD = std_calc(TempETS,message_count),
   ets:delete(TempETS),
-  {TempAVG,SelfTempAVG,HumidityAVG}.
+  {TempAVG,SelfTempAVG,HumidityAVG,BatteryAVGandSTD,MsgCountAVGandSTD}.
 
 getETSdata(ETS) ->
   case ETS of
@@ -266,18 +268,23 @@ insert_map_to_tempETS(none,_,_,_) -> none;
 insert_map_to_tempETS(Map,TempETS,CurrTime,TimeFilter) ->
   SensTimeStamp = maps:get(time,Map),
   case check_time(CurrTime,SensTimeStamp,TimeFilter) of
-    true -> ets:insert(TempETS,{time,maps:get(time,Map)}),
+    true ->
+      ets:insert(TempETS,{time,maps:get(time,Map)}),
       ets:insert(TempETS,{temp,maps:get(temp,Map)}),
       ets:insert(TempETS,{self_temp,maps:get(self_temp,Map)}),
-      ets:insert(TempETS,{humidity,maps:get(humidity,Map)});
+      ets:insert(TempETS,{humidity,maps:get(humidity,Map)}),
+      ets:insert(TempETS,{battery,maps:get(battery,Map)}),
+      ets:insert(TempETS,{message_count,maps:get(message_count,Map)});
     false -> ok
   end.
 
 insert_data_to_tempETS(none,_) -> ok;
-insert_data_to_tempETS({TempData,SelfTempData,HumidityData},TempETS) ->
+insert_data_to_tempETS({TempData,SelfTempData,HumidityData,BatteryData,MsgCount},TempETS) ->
   ets:insert(TempETS,{temp,TempData}),
   ets:insert(TempETS,{self_temp,SelfTempData}),
-  ets:insert(TempETS,{humidity,HumidityData}).
+  ets:insert(TempETS,{humidity,HumidityData}),
+  ets:insert(TempETS,{battery,BatteryData}),
+  ets:insert(TempETS,{message_count,MsgCount}).
 
 check_time(_CurrTime,_SensorTime,none) -> true;
 check_time(CurrTime,SensorTime,TimeFilter) -> %TimeFilter should be in miliseconds
@@ -304,3 +311,9 @@ avg_calc(TempETS,Key) ->
     0 -> 0.0;
     _ -> Sum/Length
   end.
+
+std_calc(TempETS,Key) ->
+  AVG = avg_calc(TempETS,Key),
+  ValuesList = lists:flatten(ets:match(TempETS,{Key,'$1'})),
+  DistancesList = [math:pow((Battery-AVG),2)||Battery <- ValuesList],
+  {AVG,math:sqrt(lists:sum(DistancesList)/erlang:length(DistancesList))}.
