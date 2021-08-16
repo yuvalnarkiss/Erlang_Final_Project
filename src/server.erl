@@ -55,9 +55,9 @@ init({MainPC_Node,[PC1,PC2,PC3,PC4],Which_PC}) ->
   io:format("server init ~n",[]),
   Offset = case Which_PC of
              pc1 -> {0,0};
-             pc2 -> {?AREA_WIDTH_METER/2,0};
-             pc3 -> {0,?AREA_HEIGHT_METER/2};
-             pc4 -> {?AREA_WIDTH_METER/2,?AREA_HEIGHT_METER/2}
+             pc2 -> {trunc(?AREA_WIDTH_METER/2),0};
+             pc3 -> {0,trunc(?AREA_HEIGHT_METER/2)};
+             pc4 -> {trunc(?AREA_WIDTH_METER/2),trunc(?AREA_HEIGHT_METER/2)}
            end,
   ets:new(nodes,[set,public,named_table]),
   ets:new(graphic_sensor,[set,public,named_table]),

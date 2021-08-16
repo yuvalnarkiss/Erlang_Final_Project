@@ -331,4 +331,8 @@ std_calc(TempETS,Key) ->
   AVG = avg_calc(TempETS,Key),
   ValuesList = lists:flatten(ets:match(TempETS,{Key,'$1'})),
   DistancesList = [math:pow((Battery-AVG),2)||Battery <- ValuesList],
-  {AVG,math:sqrt(lists:sum(DistancesList)/erlang:length(DistancesList))}.
+  Length = erlang:length(DistancesList),
+  case Length of
+    0 -> {AVG,0.0};
+    _ -> {AVG,math:sqrt(lists:sum(DistancesList)/Length)}
+  end.
