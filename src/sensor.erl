@@ -23,6 +23,7 @@
 -define(SELF_TEMP_RANGE,50).
 -define(MIN_TEMP,9).
 
+
 %% API
 -export([start_link/2,start_link/3, gotoSleep/1, set_battery/2, randomize_P/1, forward/2, power_off/1, update_neighbors/2, sensor_down/1]).
 
@@ -254,14 +255,14 @@ send_data_to_neighbor(Sensor_Pos,[{Neighbor_PID,Neighbor_POS}|NhbrList],Data_Lis
 		true ->  sensor:forward(Neighbor_PID,{Sensor_Pos,Data_List});
 		false -> rpc:call(Node,sensor,forward,[Neighbor_PID,{Sensor_Pos,Data_List}])
 	end,
-	New_Data_List = case Msg_status of
-										sent -> [];
+	{New_Data_List, Final_status} = case Msg_status of
+										sent -> {[], sent};
 										abort -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,Main_PC);
 										{badrpc,{'EXIT',{timeout,_Data}}} -> send_data_to_neighbor(Sensor_Pos,NhbrList,Data_List,Main_PC);
-										{badrpc,_Reason} -> [];
-										stop -> []
+										{badrpc,_Reason} -> {Data_List, not_sent};
+										stop -> {Data_List, stop}
 									end,
-	{New_Data_List, Msg_status}.
+	{New_Data_List, Final_status}.
 
 monitor_data(Sensor_Pos) ->
 	Time = erlang:universaltime(),
@@ -299,8 +300,8 @@ update_batery_img(Sensor_Pos,Old_Battery_Level0,New_Battery_Level0) ->
 
 find_pc(Sensor_Pos) ->
 	case Sensor_Pos of
-		{X,Y} when X =< ?AREA_WIDTH_METER/2 , Y =< ?AREA_HEIGHT_METER/2 -> ets:lookup_element(nodes,pc1,2);
-		{X,Y} when X >= ?AREA_WIDTH_METER/2 , Y =< ?AREA_HEIGHT_METER/2 -> ets:lookup_element(nodes,pc2,2);
-		{X,Y} when X =< ?AREA_WIDTH_METER/2 , Y >= ?AREA_HEIGHT_METER/2 -> ets:lookup_element(nodes,pc3,2);
-		{X,Y} when X >= ?AREA_WIDTH_METER/2 , Y >= ?AREA_HEIGHT_METER/2 -> ets:lookup_element(nodes,pc4,2)
+		{X,Y} when X < ?ULQXBOUNDARY , Y < ?ULQYBOUNDARY -> ets:lookup_element(nodes,pc1,2);
+		{X,Y} when X > ?URQXBOUNDARY , Y < ?URQYBOUNDARY -> ets:lookup_element(nodes,pc2,2);
+		{X,Y} when X < ?DLQXBOUNDARY , Y > ?DLQYBOUNDARY -> ets:lookup_element(nodes,pc3,2);
+		{X,Y} when X > ?DRQXBOUNDARY , Y > ?DRQYBOUNDARY -> ets:lookup_element(nodes,pc4,2)
 	end.
