@@ -2,6 +2,7 @@
 Final project in functional programming in concurrent and distributed systems coruse, Ben-Gurion University of The Negev.
 Year: 2021, Semester B.
 Creators: Katrin Nekhin, Yuval Narkiss.
+Developed in: Ubuntu Version: 20.04 | Erlang Version: 22
 
 Introduction:
 This project implements a simulation of a sensor network in a defined area.
